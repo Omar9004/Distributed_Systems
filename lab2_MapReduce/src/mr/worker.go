@@ -31,20 +31,21 @@ func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
 	for {
-		getReplay := ourCall("Coordinator.rpcHandler", reqArgs{currentStatus: workerIdle})
-		request := reqArgs{}
-		if getReplay.taskType != noTask {
+		getReplay := OurCall("Coordinator.RPCHandler", ReqArgs{CurrentStatus: WorkerIdle})
+		request := ReqArgs{}
+
+		if getReplay.TaskType == NoTask {
+
 			break
 		}
-
-		switch getReplay.taskType {
-		case mapTask:
-			getReplay = mapFunction(getReplay, request, mapf)
-		case reduceTask:
-			getReplay = reduceFunction(getReplay, request, reducef)
-		case waitForTask:
+		switch getReplay.TaskType {
+		case MapTask:
+			getReplay = MapFunction(getReplay, request, mapf)
+		case ReduceTask:
+			getReplay = ReduceFunction(getReplay, request, reducef)
+		case WaitForTask:
 			time.Sleep(time.Second)
-		case noTask:
+		case NoTask:
 
 			os.Exit(0)
 		}
@@ -70,9 +71,9 @@ func partition(kv []KeyValue, nReduce int) [][]KeyValue {
 	}
 	return intermediates
 }
-func mapFunction(replay Replay, request reqArgs, mapf func(string, string) []KeyValue) Replay {
+func MapFunction(replay Replay, request ReqArgs, mapf func(string, string) []KeyValue) Replay {
 	//Open the file input assigned from the coordinator
-	file, err := os.Open(replay.files[0])
+	file, err := os.Open(replay.InputFiles[0])
 	if err != nil {
 		log.Fatalf("Can't open the file", file)
 	}
@@ -82,20 +83,19 @@ func mapFunction(replay Replay, request reqArgs, mapf func(string, string) []Key
 		log.Fatalf("Can't read the content", file)
 	}
 	file.Close()
-
 	//Use Map Function exits in mrapps to map the given file, returns a keyValue pair list i.e. ("word","1")
-	kv := mapf(replay.files[0], string(content))
+	kv := mapf(replay.InputFiles[0], string(content))
 	// Declare intermediates is two-dim. list/array, structured as [][]KeyValue.
 	// the outer slice:represents nReduce buckets, the inner slice ([]keyValue) stores key-value pairs
-	intermediates := partition(kv, replay.nReduce)
+	intermediates := partition(kv, replay.NReduce)
 
 	// Write the content of the intermediates to files, where each file will be encoded as "mr-out-reduceId"
 
 	for reduceId, kvList := range intermediates {
 		//Name and create the output file according the reduceId
-		outFile := fmt.Sprintf("mr-out-%d", reduceId)
+		outFile := fmt.Sprintf("mr-%d-%d", replay.ID, reduceId)
 		file, err := os.Create(outFile)
-		request.fileNames = append(request.fileNames, outFile)
+		request.FileNames = append(request.FileNames, outFile)
 		if err != nil {
 			log.Fatalf("Failed to create file %s: %v:", outFile, err)
 		}
@@ -110,17 +110,18 @@ func mapFunction(replay Replay, request reqArgs, mapf func(string, string) []Key
 		file.Close()
 
 	}
-	request.id = replay.id
+	request.ID = replay.ID
 	// Notify the coordinator that the Reduce task is completed
-	newReplay := ourCall("Coordinator.taskComplete", reqArgs{currentStatus: workerFinishMap})
+	newReplay := OurCall("Coordinator.TaskComplete", ReqArgs{CurrentStatus: WorkerFinishMap})
 	return newReplay
 }
-func reduceFunction(replay Replay, request reqArgs, reducef func(string, []string) string) Replay {
+func ReduceFunction(replay Replay, request ReqArgs, reducef func(string, []string) string) Replay {
 	// Create a new list to store all intermediate key-value pairs assigned by the coordinator
-	intermediate := []KeyValue{}
+	var intermediate []KeyValue
 	//Iterate through the set of reduced files assigned by Reduce task
-	for i := 0; i < len(replay.files); i++ {
-		file, err := os.Open(replay.files[i])
+	fmt.Println(replay.InputFiles)
+	for i := 0; i < len(replay.InputFiles); i++ {
+		file, err := os.Open(replay.InputFiles[i])
 		if err != nil {
 			log.Fatalf("Can't open the file %s: %v:", file, err)
 		}
@@ -138,8 +139,8 @@ func reduceFunction(replay Replay, request reqArgs, reducef func(string, []strin
 	sort.Slice(intermediate, func(i, j int) bool {
 		return intermediate[i].Key < intermediate[j].Key
 	})
-	oname := fmt.Sprintf("mr-out-%d.txt", request.id)
-	request.fileNames = append(request.fileNames, oname)
+	oname := fmt.Sprintf("mr-out-%d.txt", request.ID)
+	request.FileNames = append(request.FileNames, oname)
 	ofile, _ := os.Create(oname)
 	i := 0
 	for i < len(intermediate) {
@@ -160,9 +161,9 @@ func reduceFunction(replay Replay, request reqArgs, reducef func(string, []strin
 	}
 
 	ofile.Close()
-	request.id = replay.id
+	request.ID = replay.ID
 	// Notify the coordinator that the Reduce task is completed
-	newReplay := ourCall("Coordinator.taskComplete", reqArgs{currentStatus: workerFinishReduce})
+	newReplay := OurCall("Coordinator.TaskComplete", ReqArgs{CurrentStatus: WorkerFinishReduce})
 	return newReplay
 }
 
@@ -193,7 +194,7 @@ func reduceFunction(replay Replay, request reqArgs, reducef func(string, []strin
 //	}
 //}
 
-func ourCall(callFunc string, args reqArgs) Replay {
+func OurCall(callFunc string, args ReqArgs) Replay {
 	replay := Replay{}
 
 	makeCall := call(callFunc, &args, &replay)

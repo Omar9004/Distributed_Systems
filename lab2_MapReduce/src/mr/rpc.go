@@ -15,32 +15,32 @@ type taskType int
 type currentStatus int
 
 const (
-	workerIdle = iota
+	WorkerIdle = iota
 	workerBusy
-	workerFinishMap
-	workerFinishReduce
+	WorkerFinishMap
+	WorkerFinishReduce
 )
 
 const (
-	mapTask = iota
-	reduceTask
-	waitForTask
-	noTask
+	MapTask = iota
+	ReduceTask
+	WaitForTask
+	NoTask
 )
 
-// Request type arguments
-type reqArgs struct {
-	currentStatus currentStatus
-	fileNames     []string
-	id            int
+// ReqArgs Request type arguments
+type ReqArgs struct {
+	CurrentStatus currentStatus
+	FileNames     []string
+	ID            int
 }
 
 // Replay or respond type from the coordinator
 type Replay struct {
-	taskType taskType //The type of the assigned task from the coordinator
-	id       int      // Task ID
-	files    []string // Input files for the task
-	nReduce  int      // Number of reduce tasks (for partitioning)
+	TaskType   taskType //The type of the assigned task from the coordinator
+	ID         int      // Task ID
+	InputFiles []string // Input files for the task
+	NReduce    int      // Number of reduce tasks (for partitioning)
 }
 
 // Add your RPC definitions here.
