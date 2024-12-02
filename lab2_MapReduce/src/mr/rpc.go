@@ -12,27 +12,35 @@ import "strconv"
 // example to show how to declare the arguments
 // and reply for an RPC.
 type taskType int
+type currentStatus int
+
+const (
+	workerIdle = iota
+	workerBusy
+	workerFinishMap
+	workerFinishReduce
+)
 
 const (
 	mapTask = iota
 	reduceTask
 	waitForTask
-	NoTask
+	noTask
 )
 
 // Request type arguments
 type reqArgs struct {
-	taskType  taskType
-	fileNames []string
-	id        int
+	currentStatus currentStatus
+	fileNames     []string
+	id            int
 }
 
 // Replay or respond type from the coordinator
 type Replay struct {
 	taskType taskType //The type of the assigned task from the coordinator
-	id       int      //
-	files    []string
-	nReduce  int
+	id       int      // Task ID
+	files    []string // Input files for the task
+	nReduce  int      // Number of reduce tasks (for partitioning)
 }
 
 // Add your RPC definitions here.
