@@ -5,11 +5,11 @@ import (
 	"log"
 	"sync"
 	"time"
+	"net"
+	"os"
+	"net/rpc"
+	"net/http"
 )
-import "net"
-import "os"
-import "net/rpc"
-import "net/http"
 
 const (
 	free = iota
@@ -22,7 +22,6 @@ type task struct {
 	workerId  string
 	startTime time.Time
 }
-
 type mapT struct {
 	filename string
 	nR       int
@@ -46,7 +45,68 @@ type Coordinator struct {
 	mutex    sync.Mutex
 }
 
-// Your code here -- RPC handlers for the worker to call.
+type MapReduceTask interface {
+	AssignTask(workerId string)
+}
+
+func (t *Task) AssignTask(workerId string) {
+	t.Status = IN_PROGRESS
+	t.WorkerId = workerId
+	t.StartedAt = time.Now()
+}
+   
+// Finds the first idle map task then first idle reduce task.
+// If task found, then update the task with the worker assignment
+// If no tasks, then reply is set to nil
+func (c *Coordinator) AssignTask(workerId string, task *MapReduceTask) error {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+   
+	if c.mapTasksRemaining != 0 {
+	 for _, mt := range c.mapTasks {
+	  if mt.Status == IDLE {
+	   fmt.Printf("[Coordinator] Assigning Map Task: %v\n", mt.FileName)
+	   mt.AssignTask(workerId)
+	   *task = mt
+	   break
+	  }
+	 }
+	 return nil
+	}
+   
+	if c.reduceTasksRemaining != 0 {
+	 for _, rt := range c.reduceTasks {
+	  if rt.Status == IDLE {
+	   fmt.Printf("[Coordinator] Assigning Reduce Task: %v\n", rt.Region)
+	   rt.AssignTask(workerId)
+	   *task = rt
+	   break
+	  }
+	 }
+	 return nil
+	}
+	fmt.Println("[Coordinator] No idle tasks found")
+	task = nil
+	return nil
+   }
+
+// Your code here -- RPC handlers for the worker to call. 
+func (c *coordinator) OurRPChdr(args *reqArgs, reply *Replay) error {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	switch args.taskType{
+
+	case NoTask:
+	
+	case mapTask:
+
+	case reduceTask:
+
+	case waitForTask:
+	}
+} 
+
 
 // an example RPC handler.
 //
@@ -94,7 +154,9 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c.reduceTasks = make([]*reduceT, nReduce)
 	c.reduceTasksRemaining = nReduce
 	c.deadline = time.Second * 10
+	c.mutex = sync.Mutex{}//for avoiding two workers see a task as idle and begin work on it.
 
+	//Initialize map tasks
 	for i, file := range files {
 		c.mapTasks[i] = &mapT{
 			filename: file,
@@ -104,6 +166,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 
 	}
 
+	 //Initialize reduce tasks
 	for i := 0; i < nReduce; i++ {
 		c.reduceTasks[i] = &reduceT{
 			place: i + 1,
