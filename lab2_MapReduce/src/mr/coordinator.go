@@ -148,7 +148,7 @@ func (c *Coordinator) MonitorTasks() {
 		c.Mutex.Lock()
 		for _, task := range c.MapTasks {
 			if task.Status == TaskInProgress && time.Since(task.StartTime) > c.MaxTaskDuration {
-				fmt.Println("Task is terminated")
+				//fmt.Println("Task is terminated")
 				task.Status = TaskAvailable
 				c.MapTasksRemaining++
 			}

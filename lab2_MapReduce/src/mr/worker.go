@@ -93,7 +93,7 @@ func MapFunction(replay Replay, request ReqArgs, mapf func(string, string) []Key
 
 	for reduceId, kvList := range intermediates {
 		//Name and create the output file according the reduceId
-		outFile := fmt.Sprintf("mr-%d-%d", replay.ID, reduceId)
+		outFile := fmt.Sprintf("mr-out-%d", reduceId)
 		file, err := os.Create(outFile)
 		request.FileNames = append(request.FileNames, outFile)
 		if err != nil {
