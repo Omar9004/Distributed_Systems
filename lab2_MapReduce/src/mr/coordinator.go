@@ -23,7 +23,7 @@ const (
 // Task Common task structure
 type Task struct {
 	Status    int
-	WorkerId  string
+	WorkerId  int
 	StartTime time.Time
 }
 
@@ -67,6 +67,24 @@ func (c *Coordinator) TaskComplete(args *ReqArgs, replay *Replay) error {
 			task.Status = TaskCompleted
 			c.MapTasksRemaining--
 		}
+		//fmt.Printf(" intermediateFiles in the TaskComplete: %v\n", args.intermediateFiles)
+		// To save the intermediate files to the location list on Reduce tasks
+		for _, file := range args.intermediateFiles {
+			var reduceID int
+
+			// Parse the intermediate file name
+			sscanf, err := fmt.Sscanf(file, "mr-out-%d-%d", &args.ID, &reduceID)
+			if err != nil || sscanf != 2 {
+				return fmt.Errorf("failed to parse intermediate file %s: %v", file, err)
+			}
+
+			// Lock the Coordinator to safely update ReduceTasks
+			//c.Mutex.Lock()
+			c.ReduceTasks[reduceID].Location = append(c.ReduceTasks[reduceID].Location, file)
+			//c.Mutex.Unlock()
+
+			fmt.Printf("Reduce Task %d updated with intermediate file: %s\n", reduceID, file)
+		}
 	case WorkerFinishReduce:
 		task := c.ReduceTasks[args.ID]
 		if task.Status == TaskInProgress {
@@ -86,17 +104,34 @@ func (c *Coordinator) RPCHandler(args *ReqArgs, reply *Replay) error {
 	defer c.Mutex.Unlock()
 	// Assign a Map task if available
 	for _, task := range c.MapTasks {
+		if task.Status == TaskInProgress && time.Since(task.StartTime) > c.MaxTaskDuration {
+			task.Status = TaskAvailable
+			c.MapTasksRemaining++
+			break
+		}
+	}
+
+	// Assign a Map task if available
+	for idIndex, task := range c.MapTasks {
 		if task.Status == TaskAvailable {
 			task.Status = TaskInProgress
 			task.StartTime = time.Now()
 			reply.TaskType = MapTask
-			reply.ID = task.NReduce                    // Task ID for worker
-			reply.InputFiles = []string{task.Filename} // Input files for Map task
+			reply.ID = idIndex
+			task.WorkerId = idIndex
+			reply.InputFiles = []string{task.Filename}
 			reply.NReduce = task.NReduce
 			return nil
 		}
 	}
 
+	for _, task := range c.ReduceTasks {
+		if task.Status == TaskInProgress && time.Since(task.StartTime) > c.MaxTaskDuration {
+			task.Status = TaskAvailable
+			c.ReduceTasksRemaining++
+			break
+		}
+	}
 	// If no Map tasks are available, check Reduce tasks
 	if c.MapTasksRemaining == 0 {
 		for _, task := range c.ReduceTasks {
@@ -141,14 +176,14 @@ func (c *Coordinator) Done() bool {
 	return c.MapTasksRemaining == 0 && c.ReduceTasksRemaining == 0
 }
 
-// MonitorTasks  for timeouts and reset them
-func (c *Coordinator) MonitorTasks() {
+// MonitorTasks checks if the worker exceeds the time limit
+func (c *Coordinator) MonitorTasks() bool {
 	for {
 		time.Sleep(time.Second)
 		c.Mutex.Lock()
 		for _, task := range c.MapTasks {
 			if task.Status == TaskInProgress && time.Since(task.StartTime) > c.MaxTaskDuration {
-				//fmt.Println("Task is terminated")
+				//fmt.Printf("Worker_id: %d is terminated", task.WorkerId)
 				task.Status = TaskAvailable
 				c.MapTasksRemaining++
 			}

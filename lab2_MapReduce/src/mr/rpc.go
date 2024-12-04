@@ -30,9 +30,10 @@ const (
 
 // ReqArgs Request type arguments
 type ReqArgs struct {
-	CurrentStatus currentStatus
-	FileNames     []string
-	ID            int
+	CurrentStatus     currentStatus
+	FileNames         []string
+	intermediateFiles []string
+	ID                int
 }
 
 // Replay or respond type from the coordinator

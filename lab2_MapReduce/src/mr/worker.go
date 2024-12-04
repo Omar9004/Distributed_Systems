@@ -29,11 +29,10 @@ func ihash(key string) int {
 // main/mrworker.go calls this function.
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
-
+	getReplay := OurCall("Coordinator.RPCHandler", &ReqArgs{CurrentStatus: WorkerIdle})
+	request := ReqArgs{}
 	for {
-		getReplay := OurCall("Coordinator.RPCHandler", ReqArgs{CurrentStatus: WorkerIdle})
-		request := ReqArgs{}
-
+		//fmt.Printf(" Worker ID: %d, Task Type: %v", getReplay.ID, getReplay.TaskType)
 		if getReplay.TaskType == NoTask {
 
 			break
@@ -74,6 +73,7 @@ func partition(kv []KeyValue, nReduce int) [][]KeyValue {
 func MapFunction(replay Replay, request ReqArgs, mapf func(string, string) []KeyValue) Replay {
 	//Open the file input assigned from the coordinator
 	file, err := os.Open(replay.InputFiles[0])
+
 	if err != nil {
 		log.Fatalf("Can't open the file", file)
 	}
@@ -93,9 +93,9 @@ func MapFunction(replay Replay, request ReqArgs, mapf func(string, string) []Key
 
 	for reduceId, kvList := range intermediates {
 		//Name and create the output file according the reduceId
-		outFile := fmt.Sprintf("mr-out-%d", reduceId)
+		outFile := fmt.Sprintf("mr-%d-%d", replay.ID, reduceId)
 		file, err := os.Create(outFile)
-		request.FileNames = append(request.FileNames, outFile)
+		request.intermediateFiles = append(request.intermediateFiles, outFile)
 		if err != nil {
 			log.Fatalf("Failed to create file %s: %v:", outFile, err)
 		}
@@ -111,8 +111,12 @@ func MapFunction(replay Replay, request ReqArgs, mapf func(string, string) []Key
 
 	}
 	request.ID = replay.ID
-	// Notify the coordinator that the Reduce task is completed
-	newReplay := OurCall("Coordinator.TaskComplete", ReqArgs{CurrentStatus: WorkerFinishMap})
+	request.CurrentStatus = WorkerFinishMap
+	fmt.Printf("intermediateFiles: %v\n", request.intermediateFiles)
+	// Notify the coordinator that the Map task is completed
+	OurCall("Coordinator.TaskComplete", &request)
+	newReplay := OurCall("Coordinator.RPCHandler", &request)
+
 	return newReplay
 }
 func ReduceFunction(replay Replay, request ReqArgs, reducef func(string, []string) string) Replay {
@@ -162,8 +166,10 @@ func ReduceFunction(replay Replay, request ReqArgs, reducef func(string, []strin
 
 	ofile.Close()
 	request.ID = replay.ID
+	request.CurrentStatus = WorkerFinishMap
 	// Notify the coordinator that the Reduce task is completed
-	newReplay := OurCall("Coordinator.TaskComplete", ReqArgs{CurrentStatus: WorkerFinishReduce})
+	OurCall("Coordinator.TaskComplete", &request)
+	newReplay := OurCall("Coordinator.RPCHandler", &request)
 	return newReplay
 }
 
@@ -194,7 +200,7 @@ func ReduceFunction(replay Replay, request ReqArgs, reducef func(string, []strin
 //	}
 //}
 
-func OurCall(callFunc string, args ReqArgs) Replay {
+func OurCall(callFunc string, args *ReqArgs) Replay {
 	replay := Replay{}
 
 	makeCall := call(callFunc, &args, &replay)
