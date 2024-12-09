@@ -26,35 +26,24 @@ func ihash(key string) int {
 	return int(h.Sum32() & 0x7fffffff)
 }
 
-// main/mrworker.go calls this function.
-func Worker(mapf func(string, string) []KeyValue,
-	reducef func(string, []string) string) {
-	getReplay := OurCall("Coordinator.RPCHandler", &ReqArgs{CurrentStatus: WorkerIdle})
-	request := ReqArgs{}
+func Worker(mapf func(string, string) []KeyValue, reducef func(string, []string) string) {
 	for {
-		//fmt.Printf(" Worker ID: %d, Task Type: %v", getReplay.ID, getReplay.TaskType)
-		if getReplay.TaskType == NoTask {
-
-			break
-		}
-		switch getReplay.TaskType {
+		replay := OurCall("Coordinator.RPCHandler", &ReqArgs{CurrentStatus: WorkerIdle})
+		switch replay.TaskType {
 		case MapTask:
-			getReplay = MapFunction(getReplay, request, mapf)
+			MapFunction(replay, ReqArgs{}, mapf)
 		case ReduceTask:
-			getReplay = ReduceFunction(getReplay, request, reducef)
+			ReduceFunction(replay, ReqArgs{}, reducef)
 		case WaitForTask:
-			time.Sleep(time.Second)
+			// Wait briefly before requesting again
+			time.Sleep(500 * time.Millisecond)
+			continue
 		case NoTask:
-
-			os.Exit(0)
+			return
+		default:
+			log.Fatalf("Unknown task type: %d\n", replay.TaskType)
 		}
 	}
-
-	// Your worker implementation here.
-
-	// uncomment to send the Example RPC to the coordinator.
-	// CallExample()
-	//map := mapf.(func(string, string) )
 }
 
 // Partition key-value pairs into intermediate buckets using ihash to compute the reduceID.
@@ -70,7 +59,7 @@ func partition(kv []KeyValue, nReduce int) [][]KeyValue {
 	}
 	return intermediates
 }
-func MapFunction(replay Replay, request ReqArgs, mapf func(string, string) []KeyValue) Replay {
+func MapFunction(replay Replay, request ReqArgs, mapf func(string, string) []KeyValue) {
 	//Open the file input assigned from the coordinator
 	file, err := os.Open(replay.InputFiles[0])
 
@@ -94,8 +83,9 @@ func MapFunction(replay Replay, request ReqArgs, mapf func(string, string) []Key
 	for reduceId, kvList := range intermediates {
 		//Name and create the output file according the reduceId
 		outFile := fmt.Sprintf("mr-%d-%d", replay.ID, reduceId)
-		file, err := os.Create(outFile)
-		request.intermediateFiles = append(request.intermediateFiles, outFile)
+		//file, err := os.Create(outFile)
+		file, err := ioutil.TempFile("", outFile)
+		request.FileNames = append(request.FileNames, outFile)
 		if err != nil {
 			log.Fatalf("Failed to create file %s: %v:", outFile, err)
 		}
@@ -107,23 +97,24 @@ func MapFunction(replay Replay, request ReqArgs, mapf func(string, string) []Key
 				log.Fatalf("Failed to write keyValue pair to file %v: %v", outFile, err)
 			}
 		}
+		os.Rename(file.Name(), outFile)
 		file.Close()
 
 	}
 	request.ID = replay.ID
 	request.CurrentStatus = WorkerFinishMap
-	fmt.Printf("intermediateFiles: %v\n", request.intermediateFiles)
+	//fmt.Printf("Worker request args: %+v\n", request)
+
 	// Notify the coordinator that the Map task is completed
 	OurCall("Coordinator.TaskComplete", &request)
-	newReplay := OurCall("Coordinator.RPCHandler", &request)
+	//newReplay := OurCall("Coordinator.RPCHandler", &request)
 
-	return newReplay
 }
-func ReduceFunction(replay Replay, request ReqArgs, reducef func(string, []string) string) Replay {
+func ReduceFunction(replay Replay, request ReqArgs, reducef func(string, []string) string) {
 	// Create a new list to store all intermediate key-value pairs assigned by the coordinator
 	var intermediate []KeyValue
+	//fmt.Printf("Intermediates file assigned to Reduce Task function %v", replay.InputFiles)
 	//Iterate through the set of reduced files assigned by Reduce task
-	fmt.Println(replay.InputFiles)
 	for i := 0; i < len(replay.InputFiles); i++ {
 		file, err := os.Open(replay.InputFiles[i])
 		if err != nil {
@@ -143,9 +134,11 @@ func ReduceFunction(replay Replay, request ReqArgs, reducef func(string, []strin
 	sort.Slice(intermediate, func(i, j int) bool {
 		return intermediate[i].Key < intermediate[j].Key
 	})
-	oname := fmt.Sprintf("mr-out-%d.txt", request.ID)
-	request.FileNames = append(request.FileNames, oname)
-	ofile, _ := os.Create(oname)
+	oName := fmt.Sprintf("mr-out-%d", replay.ID)
+	request.FileNames = append(request.FileNames, oName)
+	ofile, _ := ioutil.TempFile("", oName)
+	//ofile, _ := os.Create(oName)
+
 	i := 0
 	for i < len(intermediate) {
 		j := i + 1
@@ -165,40 +158,15 @@ func ReduceFunction(replay Replay, request ReqArgs, reducef func(string, []strin
 	}
 
 	ofile.Close()
+
+	os.Rename(ofile.Name(), oName)
 	request.ID = replay.ID
-	request.CurrentStatus = WorkerFinishMap
+	request.CurrentStatus = WorkerFinishReduce
 	// Notify the coordinator that the Reduce task is completed
 	OurCall("Coordinator.TaskComplete", &request)
-	newReplay := OurCall("Coordinator.RPCHandler", &request)
-	return newReplay
-}
+	//newReplay := OurCall("Coordinator.RPCHandler", &request)
 
-// example function to show how to make an RPC call to the coordinator.
-//
-// the RPC argument and reply types are defined in rpc.go.
-//func CallExample() {
-//
-//	// declare an argument structure.
-//	args := ExampleArgs{}
-//
-//	// fill in the argument(s)."Coordinator.rpcHandler"
-//	args.X = 99
-//
-//	// declare a reply structure.
-//	reply := ExampleReply{}
-//
-//	// send the RPC request, wait for the reply.
-//	// the "Coordinator.Example" tells the
-//	// receiving server that we'd like to call
-//	// the Example() method of struct Coordinator.
-//	ok := call("Coordinator.Example", &args, &reply)
-//	if ok {
-//		// reply.Y should be 100.
-//		fmt.Printf("reply.Y %v\n", reply.Y)
-//	} else {
-//		fmt.Printf("call failed!\n")
-//	}
-//}
+}
 
 func OurCall(callFunc string, args *ReqArgs) Replay {
 	replay := Replay{}
@@ -222,7 +190,6 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 		log.Fatal("dialing:", err)
 	}
 	defer c.Close()
-
 	err = c.Call(rpcname, args, reply)
 	if err == nil {
 		return true

@@ -46,9 +46,11 @@ type Coordinator struct {
 	//Map task instances
 	MapTasks          []*MapT
 	MapTasksRemaining int
+	MapTaskDone       bool
 	//Map task instances
 	ReduceTasks          []*ReduceT
 	ReduceTasksRemaining int
+	ReduceTaskDone       bool
 	//Hold the max time duration for each task to do the assigned job
 	MaxTaskDuration time.Duration
 	// To manage the threads allocation of resources
@@ -59,37 +61,31 @@ type Coordinator struct {
 func (c *Coordinator) TaskComplete(args *ReqArgs, replay *Replay) error {
 	c.Mutex.Lock()
 	defer c.Mutex.Unlock()
-
 	switch args.CurrentStatus {
 	case WorkerFinishMap:
 		task := c.MapTasks[args.ID]
 		if task.Status == TaskInProgress {
 			task.Status = TaskCompleted
 			c.MapTasksRemaining--
-		}
-		//fmt.Printf(" intermediateFiles in the TaskComplete: %v\n", args.intermediateFiles)
-		// To save the intermediate files to the location list on Reduce tasks
-		for _, file := range args.intermediateFiles {
-			var reduceID int
-
-			// Parse the intermediate file name
-			sscanf, err := fmt.Sscanf(file, "mr-out-%d-%d", &args.ID, &reduceID)
-			if err != nil || sscanf != 2 {
-				return fmt.Errorf("failed to parse intermediate file %s: %v", file, err)
+			if c.MapTasksRemaining == 0 {
+				c.MapTaskDone = true
 			}
 
-			// Lock the Coordinator to safely update ReduceTasks
-			//c.Mutex.Lock()
-			c.ReduceTasks[reduceID].Location = append(c.ReduceTasks[reduceID].Location, file)
-			//c.Mutex.Unlock()
-
-			fmt.Printf("Reduce Task %d updated with intermediate file: %s\n", reduceID, file)
 		}
+		for reduceId, file := range args.FileNames {
+			task := c.ReduceTasks[reduceId]
+			task.Location = append(task.Location, file)
+		}
+
 	case WorkerFinishReduce:
 		task := c.ReduceTasks[args.ID]
 		if task.Status == TaskInProgress {
 			task.Status = TaskCompleted
 			c.ReduceTasksRemaining--
+			if c.ReduceTasksRemaining == 0 {
+				c.ReduceTaskDone = true
+			}
+
 		}
 	default:
 		log.Fatalf("[Coordinator.taskComplete] unknown task status: %v", args.CurrentStatus)
@@ -102,39 +98,31 @@ func (c *Coordinator) TaskComplete(args *ReqArgs, replay *Replay) error {
 func (c *Coordinator) RPCHandler(args *ReqArgs, reply *Replay) error {
 	c.Mutex.Lock()
 	defer c.Mutex.Unlock()
-	// Assign a Map task if available
-	for _, task := range c.MapTasks {
-		if task.Status == TaskInProgress && time.Since(task.StartTime) > c.MaxTaskDuration {
-			task.Status = TaskAvailable
-			c.MapTasksRemaining++
-			break
+
+	// Handle Map tasks
+	if c.MapTasksRemaining > 0 {
+		for id, task := range c.MapTasks {
+			if task.Status == TaskInProgress && time.Since(task.StartTime) > c.MaxTaskDuration {
+				task.Status = TaskAvailable
+			}
+			if task.Status == TaskAvailable {
+				task.Status = TaskInProgress
+				task.StartTime = time.Now()
+				reply.TaskType = MapTask
+				reply.ID = id
+				reply.InputFiles = []string{task.Filename}
+				reply.NReduce = task.NReduce
+				return nil
+			}
 		}
 	}
 
-	// Assign a Map task if available
-	for idIndex, task := range c.MapTasks {
-		if task.Status == TaskAvailable {
-			task.Status = TaskInProgress
-			task.StartTime = time.Now()
-			reply.TaskType = MapTask
-			reply.ID = idIndex
-			task.WorkerId = idIndex
-			reply.InputFiles = []string{task.Filename}
-			reply.NReduce = task.NReduce
-			return nil
-		}
-	}
-
-	for _, task := range c.ReduceTasks {
-		if task.Status == TaskInProgress && time.Since(task.StartTime) > c.MaxTaskDuration {
-			task.Status = TaskAvailable
-			c.ReduceTasksRemaining++
-			break
-		}
-	}
-	// If no Map tasks are available, check Reduce tasks
-	if c.MapTasksRemaining == 0 {
+	// Transition to Reduce tasks once the MapTaskDone = True
+	if c.MapTaskDone {
 		for _, task := range c.ReduceTasks {
+			if task.Status == TaskInProgress && time.Since(task.StartTime) > c.MaxTaskDuration {
+				task.Status = TaskAvailable
+			}
 			if task.Status == TaskAvailable {
 				task.Status = TaskInProgress
 				task.StartTime = time.Now()
@@ -146,8 +134,12 @@ func (c *Coordinator) RPCHandler(args *ReqArgs, reply *Replay) error {
 		}
 	}
 
-	// No tasks are available
-	reply.TaskType = NoTask
+	// Signal workers to wait for tasks if no tasks are currently available
+	if c.MapTaskDone && c.ReduceTaskDone {
+		reply.TaskType = NoTask
+		return nil
+	}
+	reply.TaskType = WaitForTask
 	return nil
 }
 
@@ -165,7 +157,6 @@ func (c *Coordinator) server() {
 	if e != nil {
 		log.Fatal("listen error:", e)
 	}
-	fmt.Println("coordinator server listening on", sockname)
 	go http.Serve(l, nil)
 }
 
@@ -173,30 +164,7 @@ func (c *Coordinator) server() {
 func (c *Coordinator) Done() bool {
 	c.Mutex.Lock()
 	defer c.Mutex.Unlock()
-	return c.MapTasksRemaining == 0 && c.ReduceTasksRemaining == 0
-}
-
-// MonitorTasks checks if the worker exceeds the time limit
-func (c *Coordinator) MonitorTasks() bool {
-	for {
-		time.Sleep(time.Second)
-		c.Mutex.Lock()
-		for _, task := range c.MapTasks {
-			if task.Status == TaskInProgress && time.Since(task.StartTime) > c.MaxTaskDuration {
-				//fmt.Printf("Worker_id: %d is terminated", task.WorkerId)
-				task.Status = TaskAvailable
-				c.MapTasksRemaining++
-			}
-		}
-
-		for _, task := range c.ReduceTasks {
-			if task.Status == TaskInProgress && time.Since(task.StartTime) > c.MaxTaskDuration {
-				task.Status = TaskAvailable
-				c.ReduceTasksRemaining++
-			}
-		}
-		c.Mutex.Unlock()
-	}
+	return c.MapTaskDone && c.ReduceTaskDone
 }
 
 // MakeCoordinator Create a Coordinator
@@ -206,6 +174,8 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 		ReduceTasks:          make([]*ReduceT, nReduce),
 		MapTasksRemaining:    len(files),
 		ReduceTasksRemaining: nReduce,
+		MapTaskDone:          false,
+		ReduceTaskDone:       false,
 		MaxTaskDuration:      time.Second * 10,
 	}
 	// Initialize Map tasks
@@ -213,7 +183,8 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 		c.MapTasks[i] = &MapT{
 			Filename: file,
 			NReduce:  nReduce,
-			Task:     Task{Status: TaskAvailable},
+			Task: Task{Status: TaskAvailable,
+				StartTime: time.Now()},
 		}
 	}
 
@@ -221,18 +192,11 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	for i := 0; i < nReduce; i++ {
 		c.ReduceTasks[i] = &ReduceT{
 			Place: i,
-			Task:  Task{Status: TaskAvailable},
+			Task: Task{Status: TaskAvailable,
+				StartTime: time.Now()},
 		}
 	}
-
-	fmt.Println("map tasks remaining:", len(c.MapTasks))
-	fmt.Println("reduce tasks remaining:", len(c.ReduceTasks))
-
 	// Start RPC server
 	c.server()
-
-	// Start monitoring tasks
-	go c.MonitorTasks()
-
 	return &c
 }
