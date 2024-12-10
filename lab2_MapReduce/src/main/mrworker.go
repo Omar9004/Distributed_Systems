@@ -15,8 +15,14 @@ import "plugin"
 import "os"
 import "fmt"
 import "log"
+import "flag"
 
 func main() {
+
+	var coordinatorAddress string
+	flag.StringVar(&coordinatorAddress, "address", "127.0.0.1:1234", "Coordinator address")
+	flag.Parse()
+
 	if len(os.Args) != 2 {
 		fmt.Fprintf(os.Stderr, "Usage: mrworker xxx.so\n")
 		os.Exit(1)
@@ -24,7 +30,7 @@ func main() {
 
 	mapf, reducef := loadPlugin(os.Args[1])
 
-	mr.Worker(mapf, reducef)
+	mr.Worker(mapf, reducef, coordinatorAddress)
 }
 
 // load the application Map and Reduce functions

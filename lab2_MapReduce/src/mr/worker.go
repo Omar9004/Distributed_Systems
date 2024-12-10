@@ -26,14 +26,14 @@ func ihash(key string) int {
 	return int(h.Sum32() & 0x7fffffff)
 }
 
-func Worker(mapf func(string, string) []KeyValue, reducef func(string, []string) string) {
+func Worker(mapf func(string, string) []KeyValue, reducef func(string, []string) string, coordinatorAddress string) {
 	for {
-		replay := OurCall("Coordinator.RPCHandler", &ReqArgs{CurrentStatus: WorkerIdle})
+		replay := OurCall("Coordinator.RPCHandler", &ReqArgs{CurrentStatus: WorkerIdle}, coordinatorAddress)
 		switch replay.TaskType {
 		case MapTask:
-			MapFunction(replay, ReqArgs{}, mapf)
+			MapFunction(replay, ReqArgs{}, mapf, coordinatorAddress)
 		case ReduceTask:
-			ReduceFunction(replay, ReqArgs{}, reducef)
+			ReduceFunction(replay, ReqArgs{}, reducef, coordinatorAddress)
 		case WaitForTask:
 			// Wait briefly before requesting again
 			time.Sleep(500 * time.Millisecond)
@@ -59,7 +59,7 @@ func partition(kv []KeyValue, nReduce int) [][]KeyValue {
 	}
 	return intermediates
 }
-func MapFunction(replay Replay, request ReqArgs, mapf func(string, string) []KeyValue) {
+func MapFunction(replay Replay, request ReqArgs, mapf func(string, string) []KeyValue, address string) {
 	//Open the file input assigned from the coordinator
 	file, err := os.Open(replay.InputFiles[0])
 
@@ -106,11 +106,11 @@ func MapFunction(replay Replay, request ReqArgs, mapf func(string, string) []Key
 	//fmt.Printf("Worker request args: %+v\n", request)
 
 	// Notify the coordinator that the Map task is completed
-	OurCall("Coordinator.TaskComplete", &request)
+	OurCall("Coordinator.TaskComplete", &request, address)
 	//newReplay := OurCall("Coordinator.RPCHandler", &request)
 
 }
-func ReduceFunction(replay Replay, request ReqArgs, reducef func(string, []string) string) {
+func ReduceFunction(replay Replay, request ReqArgs, reducef func(string, []string) string, address string) {
 	// Create a new list to store all intermediate key-value pairs assigned by the coordinator
 	var intermediate []KeyValue
 	//fmt.Printf("Intermediates file assigned to Reduce Task function %v", replay.InputFiles)
@@ -163,15 +163,15 @@ func ReduceFunction(replay Replay, request ReqArgs, reducef func(string, []strin
 	request.ID = replay.ID
 	request.CurrentStatus = WorkerFinishReduce
 	// Notify the coordinator that the Reduce task is completed
-	OurCall("Coordinator.TaskComplete", &request)
+	OurCall("Coordinator.TaskComplete", &request, address)
 	//newReplay := OurCall("Coordinator.RPCHandler", &request)
 
 }
 
-func OurCall(callFunc string, args *ReqArgs) Replay {
+func OurCall(callFunc string, args *ReqArgs, coordinatorAddress string) Replay {
 	replay := Replay{}
 
-	makeCall := call(callFunc, &args, &replay)
+	makeCall := call(callFunc, &args, &replay, coordinatorAddress)
 
 	if !makeCall {
 		fmt.Printf("call failed!\n")
@@ -182,10 +182,10 @@ func OurCall(callFunc string, args *ReqArgs) Replay {
 // send an RPC request to the coordinator, wait for the response.
 // usually returns true.
 // returns false if something goes wrong.
-func call(rpcname string, args interface{}, reply interface{}) bool {
+func call(rpcname string, args interface{}, reply interface{}, address string) bool {
 	// c, err := rpc.DialHTTP("tcp", "127.0.0.1"+":1234")
-	sockname := coordinatorSock()
-	c, err := rpc.DialHTTP("unix", sockname)
+	//sockname := coordinatorSock()
+	c, err := rpc.DialHTTP("tcp", address)
 	if err != nil {
 		log.Fatal("dialing:", err)
 	}
