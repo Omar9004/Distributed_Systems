@@ -18,7 +18,7 @@ import "flag"
 func main() {
 
 	var address string
-	flag.StringVar(&address, "address", "127.0.0.1:1234", "Coordinator address")
+	flag.StringVar(&address, "address", "0.0.0.0:1234", "Coordinator address")
 	flag.Parse()
 
 	if len(os.Args) < 2 {
