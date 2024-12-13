@@ -24,7 +24,7 @@ func main() {
 	flag.Parse()
 
 	if len(os.Args) != 2 {
-		fmt.Fprintf(os.Stderr, "Usage: mrworker xxx.so\n")
+		fmt.Fprintf(os.Stderr, "Usage: mrworker -address <coordinator_address> xxx.so\n")
 		os.Exit(1)
 	}
 

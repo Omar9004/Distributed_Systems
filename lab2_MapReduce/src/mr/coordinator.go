@@ -157,6 +157,8 @@ func (c *Coordinator) server(address string) {
 	if e != nil {
 		log.Fatal("listen error:", e)
 	}
+
+	fmt.Printf("Coordinator is running at %s\n", address)
 	go http.Serve(l, nil)
 }
 
