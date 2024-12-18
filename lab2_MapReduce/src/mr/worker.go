@@ -183,9 +183,11 @@ func OurCall(callFunc string, args *ReqArgs, coordinatorAddress string) Replay {
 // usually returns true.
 // returns false if something goes wrong.
 func call(rpcname string, args interface{}, reply interface{}, address string) bool {
-	// c, err := rpc.DialHTTP("tcp", "127.0.0.1"+":1234")
+	// c, err := rpc.DialHTTP("tcp", " 172.31.251.82"+":1234")
 	//sockname := coordinatorSock()
+
 	c, err := rpc.DialHTTP("tcp", address)
+
 	if err != nil {
 		log.Fatal("dialing:", err)
 	}
@@ -194,7 +196,7 @@ func call(rpcname string, args interface{}, reply interface{}, address string) b
 	if err == nil {
 		return true
 	}
-
+	
 	fmt.Println(err)
 	return false
 }
