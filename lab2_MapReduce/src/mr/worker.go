@@ -20,7 +20,7 @@ type KeyValue struct {
 	Value string
 }
 
-type connectionType struct {
+type ConnectionType struct {
 	CoordinatorIP string
 	WorkerPort    string
 }
@@ -34,8 +34,8 @@ func ihash(key string) int {
 }
 
 func Worker(mapf func(string, string) []KeyValue, reducef func(string, []string) string, coordinatorAddress string, workerPort string) {
-	connInfo := &connectionType{CoordinatorIP: coordinatorAddress, WorkerPort: workerPort}
-	go connInfo.WorkerServer()
+	ConnInfo := &ConnectionType{CoordinatorIP: coordinatorAddress, WorkerPort: workerPort}
+	go ConnInfo.WorkerServer()
 	for {
 		replay := OurCall("Coordinator.RPCHandler", &ReqArgs{CurrentStatus: WorkerIdle}, coordinatorAddress)
 		switch replay.TaskType {
@@ -209,10 +209,16 @@ func call(rpcname string, args interface{}, reply interface{}, address string) b
 	return false
 }
 
-func (connInfo *connectionType) WorkerServer() {
-	rpc.Register(connInfo)
+func (ConnInfo *ConnectionType) WorkerServer() {
+	err := rpc.Register(ConnInfo)
+	if err != nil {
+		log.Fatalf("Can't register worker: %v", err)
+	}
+	//if //err != nil {
+	//	return
+	//}
 	rpc.HandleHTTP()
-	l, err := net.Listen("tcp", connInfo.WorkerPort)
+	l, err := net.Listen("tcp", ":"+ConnInfo.WorkerPort)
 
 	if err != nil {
 		log.Fatalf("Server is not running", err)
