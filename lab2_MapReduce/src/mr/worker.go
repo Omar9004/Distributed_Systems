@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"net"
+	"net/http"
 	"os"
 	"sort"
 	"time"
@@ -18,6 +20,11 @@ type KeyValue struct {
 	Value string
 }
 
+type connectionType struct {
+	CoordinatorIP string
+	WorkerPort    string
+}
+
 // use ihash(key) % NReduce to choose the reduce
 // task number for each KeyValue emitted by Map.
 func ihash(key string) int {
@@ -26,7 +33,9 @@ func ihash(key string) int {
 	return int(h.Sum32() & 0x7fffffff)
 }
 
-func Worker(mapf func(string, string) []KeyValue, reducef func(string, []string) string, coordinatorAddress string) {
+func Worker(mapf func(string, string) []KeyValue, reducef func(string, []string) string, coordinatorAddress string, workerPort string) {
+	connInfo := &connectionType{CoordinatorIP: coordinatorAddress, WorkerPort: workerPort}
+	go connInfo.WorkerServer()
 	for {
 		replay := OurCall("Coordinator.RPCHandler", &ReqArgs{CurrentStatus: WorkerIdle}, coordinatorAddress)
 		switch replay.TaskType {
@@ -186,6 +195,7 @@ func call(rpcname string, args interface{}, reply interface{}, address string) b
 	// c, err := rpc.DialHTTP("tcp", "127.0.0.1"+":1234")
 	//sockname := coordinatorSock()
 	c, err := rpc.DialHTTP("tcp", address)
+
 	if err != nil {
 		log.Fatal("dialing:", err)
 	}
@@ -197,4 +207,15 @@ func call(rpcname string, args interface{}, reply interface{}, address string) b
 
 	fmt.Println(err)
 	return false
+}
+
+func (connInfo *connectionType) WorkerServer() {
+	rpc.Register(connInfo)
+	rpc.HandleHTTP()
+	l, err := net.Listen("tcp", connInfo.WorkerPort)
+
+	if err != nil {
+		log.Fatalf("Server is not running", err)
+	}
+	go http.Serve(l, nil)
 }

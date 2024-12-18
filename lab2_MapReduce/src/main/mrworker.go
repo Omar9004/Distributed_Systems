@@ -30,7 +30,7 @@ func main() {
 
 	mapf, reducef := loadPlugin(os.Args[1])
 
-	mr.Worker(mapf, reducef, coordinatorAddress)
+	mr.Worker(mapf, reducef, coordinatorAddress, "8080")
 }
 
 // load the application Map and Reduce functions

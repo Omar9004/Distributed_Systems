@@ -98,7 +98,7 @@ func (c *Coordinator) TaskComplete(args *ReqArgs, replay *Replay) error {
 func (c *Coordinator) RPCHandler(args *ReqArgs, reply *Replay) error {
 	c.Mutex.Lock()
 	defer c.Mutex.Unlock()
-
+	fmt.Printf("[Coordinator.rpcHandler] received args %v\n", args)
 	// Handle Map tasks
 	if c.MapTasksRemaining > 0 {
 		for id, task := range c.MapTasks {
