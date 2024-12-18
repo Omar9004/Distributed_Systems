@@ -6,7 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/rpc"
-	"os"
+	//"os"
 	"sync"
 	"time"
 )
@@ -144,19 +144,21 @@ func (c *Coordinator) RPCHandler(args *ReqArgs, reply *Replay) error {
 }
 
 // Start the RPC server
-func (c *Coordinator) server() {
+func (c *Coordinator) server(address string) {
 	err := rpc.Register(c)
 	if err != nil {
 		fmt.Printf("Error with rpc Register %v:\n", err.Error())
 	}
 	rpc.HandleHTTP()
 
-	sockname := coordinatorSock()
-	os.Remove(sockname)
-	l, e := net.Listen("unix", sockname)
+	// sockname := coordinatorSock()
+	// os.Remove(sockname)
+	l, e := net.Listen("tcp", address)
 	if e != nil {
 		log.Fatal("listen error:", e)
 	}
+
+	fmt.Printf("Coordinator is running at %s\n", address)
 	go http.Serve(l, nil)
 }
 
@@ -168,7 +170,7 @@ func (c *Coordinator) Done() bool {
 }
 
 // MakeCoordinator Create a Coordinator
-func MakeCoordinator(files []string, nReduce int) *Coordinator {
+func MakeCoordinator(files []string, nReduce int, address string) *Coordinator {
 	c := Coordinator{
 		MapTasks:             make([]*MapT, len(files)),
 		ReduceTasks:          make([]*ReduceT, nReduce),
@@ -197,6 +199,6 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 		}
 	}
 	// Start RPC server
-	c.server()
+	c.server(address)
 	return &c
 }

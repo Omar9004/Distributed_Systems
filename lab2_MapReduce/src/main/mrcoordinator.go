@@ -13,14 +13,20 @@ import "6.5840/mr"
 import "time"
 import "os"
 import "fmt"
+import "flag"
 
 func main() {
+
+	var address string
+	flag.StringVar(&address, "address", "0.0.0.0:1234", "Coordinator address")
+	flag.Parse()
+
 	if len(os.Args) < 2 {
 		fmt.Fprintf(os.Stderr, "Usage: mrcoordinator inputfiles...\n")
 		os.Exit(1)
 	}
 
-	m := mr.MakeCoordinator(os.Args[1:], 10)
+	m := mr.MakeCoordinator(os.Args[1:], 10, address)
 	for m.Done() == false {
 		time.Sleep(time.Second)
 	}
