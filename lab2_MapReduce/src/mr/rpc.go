@@ -50,7 +50,7 @@ type Replay struct {
 // Can't use the current directory since
 // Athena AFS doesn't support UNIX-domain sockets.
 func coordinatorSock() string {
-	s := "/var/tmp/5840-mr-"
+	s := "/var/tmp/1234-mr-"
 	s += strconv.Itoa(os.Getuid())
 	return s
 }

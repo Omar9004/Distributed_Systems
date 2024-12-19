@@ -1,30 +1,29 @@
 # Stage 1: Build
-FROM golang:1.20 AS builder
+FROM golang:1.23 AS builder
 
 # Set the working directory inside the container
 WORKDIR /app
 
 # Copy the entire src folder into the container
-COPY . .
+COPY go.mod go.sum ./
 
 # Download dependencies
 RUN go mod download
 
-# Build the Go application
-RUN go build -o app .
+COPY . .
 
-# Stage 2: Run
-FROM debian:bullseye-slim
+# Build
+RUN go build -race ./main/mrcoordinator.go
 
-# Set the working directory inside the container
-WORKDIR /app
+FROM alpine:latest
+WORKDIR /app/
+RUN apk add --no-cache libc6-compat ca-certificates tzdata
 
-# Copy the built application from the builder stage
-COPY --from=builder /app/app .
+#Add the necessary files to run the coordinator
+COPY --from=builder /app/mrcoordinator /app/main/pg*txt ./
 
-# Expose the application port
-EXPOSE 1234
+# Run
+CMD ["./mrcoordinator ./pg*txt"]
 
-# Command to run the application
-CMD ["./app"]
+
 

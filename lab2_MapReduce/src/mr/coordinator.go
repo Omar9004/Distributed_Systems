@@ -2,6 +2,7 @@ package mr
 
 import (
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -98,8 +99,8 @@ func (c *Coordinator) TaskComplete(args *ReqArgs, replay *Replay) error {
 func (c *Coordinator) RPCHandler(args *ReqArgs, reply *Replay) error {
 	c.Mutex.Lock()
 	defer c.Mutex.Unlock()
-	fmt.Printf("[Coordinator.rpcHandler] received args %v\n", args)
 	// Handle Map tasks
+	//fmt.Printf("[Coordinator.rpcHandler] received args %v\n", args)
 	if c.MapTasksRemaining > 0 {
 		for id, task := range c.MapTasks {
 			if task.Status == TaskInProgress && time.Since(task.StartTime) > c.MaxTaskDuration {
@@ -144,21 +145,18 @@ func (c *Coordinator) RPCHandler(args *ReqArgs, reply *Replay) error {
 }
 
 // Start the RPC server
-func (c *Coordinator) server(address string) {
+func (c *Coordinator) server(address net.IP) {
 	err := rpc.Register(c)
 	if err != nil {
 		fmt.Printf("Error with rpc Register %v:\n", err.Error())
 	}
 	rpc.HandleHTTP()
-
 	// sockname := coordinatorSock()
 	// os.Remove(sockname)
-	l, e := net.Listen("tcp", address)
+	l, e := net.Listen("tcp", ":1234")
 	if e != nil {
 		log.Fatal("listen error:", e)
 	}
-
-	fmt.Printf("Coordinator is running at %s\n", address)
 	go http.Serve(l, nil)
 }
 
@@ -167,6 +165,28 @@ func (c *Coordinator) Done() bool {
 	c.Mutex.Lock()
 	defer c.Mutex.Unlock()
 	return c.MapTaskDone && c.ReduceTaskDone
+}
+func GetLocalIP() net.IP {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	return localAddr.IP
+}
+
+func GetPublicIP() net.IP {
+	resp, err := http.Get("http://myexternalip.com/raw")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return net.ParseIP(string(body))
 }
 
 // MakeCoordinator Create a Coordinator
@@ -180,6 +200,10 @@ func MakeCoordinator(files []string, nReduce int, address string) *Coordinator {
 		ReduceTaskDone:       false,
 		MaxTaskDuration:      time.Second * 10,
 	}
+	PublicIP := GetPublicIP()
+	LocalIP := GetLocalIP()
+	fmt.Printf("Coordinator listening on the public ip: %s\n", PublicIP)
+	fmt.Printf("Coordinator listening on the local ip: %s\n", LocalIP)
 	// Initialize Map tasks
 	for i, file := range files {
 		c.MapTasks[i] = &MapT{
@@ -199,6 +223,6 @@ func MakeCoordinator(files []string, nReduce int, address string) *Coordinator {
 		}
 	}
 	// Start RPC server
-	c.server(address)
+	c.server(LocalIP)
 	return &c
 }

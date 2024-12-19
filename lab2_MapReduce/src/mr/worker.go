@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"net"
-	"net/http"
 	"os"
 	"sort"
 	"time"
@@ -20,10 +18,10 @@ type KeyValue struct {
 	Value string
 }
 
-type ConnectionType struct {
-	CoordinatorIP string
-	WorkerPort    string
-}
+//type ConnectionType struct {
+//	CoordinatorIP string
+//	WorkerPort    string
+//}
 
 // use ihash(key) % NReduce to choose the reduce
 // task number for each KeyValue emitted by Map.
@@ -33,11 +31,13 @@ func ihash(key string) int {
 	return int(h.Sum32() & 0x7fffffff)
 }
 
-func Worker(mapf func(string, string) []KeyValue, reducef func(string, []string) string, coordinatorAddress string, workerPort string) {
-	ConnInfo := &ConnectionType{CoordinatorIP: coordinatorAddress, WorkerPort: workerPort}
-	go ConnInfo.WorkerServer()
+func Worker(mapf func(string, string) []KeyValue, reducef func(string, []string) string, coordinatorAddress string) {
+	//c := ConnectionType{CoordinatorIP: coordinatorAddress,
+	//	WorkerPort: workerPort}
+	replay := OurCall("Coordinator.RPCHandler", &ReqArgs{CurrentStatus: WorkerIdle}, coordinatorAddress)
+	//go c.WorkerServer()
 	for {
-		replay := OurCall("Coordinator.RPCHandler", &ReqArgs{CurrentStatus: WorkerIdle}, coordinatorAddress)
+		replay = OurCall("Coordinator.RPCHandler", &ReqArgs{CurrentStatus: WorkerIdle}, coordinatorAddress)
 		switch replay.TaskType {
 		case MapTask:
 			MapFunction(replay, ReqArgs{}, mapf, coordinatorAddress)
@@ -209,19 +209,13 @@ func call(rpcname string, args interface{}, reply interface{}, address string) b
 	return false
 }
 
-func (ConnInfo *ConnectionType) WorkerServer() {
-	err := rpc.Register(ConnInfo)
-	if err != nil {
-		log.Fatalf("Can't register worker: %v", err)
-	}
-	//if //err != nil {
-	//	return
-	//}
-	rpc.HandleHTTP()
-	l, err := net.Listen("tcp", ":"+ConnInfo.WorkerPort)
-
-	if err != nil {
-		log.Fatalf("Server is not running", err)
-	}
-	go http.Serve(l, nil)
-}
+//func (c *ConnectionType) WorkerServer() {
+//	rpc.Register(c)
+//	rpc.HandleHTTP()
+//	l, err := net.Listen("tcp", ":"+c.WorkerPort)
+//
+//	if err != nil {
+//		log.Fatalf("Server is not running", err)
+//	}
+//	go http.Serve(l, nil)
+//}
