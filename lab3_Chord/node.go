@@ -20,12 +20,6 @@ type Node struct {
 	Bucket map[Key]string
 }
 
-func HashFunction(data string) *big.Int {
-	hasher := sha1.New()
-	hasher.Write([]byte(data))
-	return big.NewInt(0).SetBytes(hasher.Sum(nil))
-}
-
 // CreateRing initializes the Chord Ring
 func (n *Node) CreateRing() {
 	n.Predecessor = nil
