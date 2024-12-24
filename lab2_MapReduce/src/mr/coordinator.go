@@ -100,7 +100,7 @@ func (c *Coordinator) RPCHandler(args *ReqArgs, reply *Replay) error {
 	c.Mutex.Lock()
 	defer c.Mutex.Unlock()
 	// Handle Map tasks
-	//fmt.Printf("[Coordinator.rpcHandler] received args %v\n", args)
+	fmt.Printf("[Coordinator.rpcHandler] received args %v\n", args)
 	if c.MapTasksRemaining > 0 {
 		for id, task := range c.MapTasks {
 			if task.Status == TaskInProgress && time.Since(task.StartTime) > c.MaxTaskDuration {
