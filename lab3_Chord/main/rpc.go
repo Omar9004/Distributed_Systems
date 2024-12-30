@@ -50,6 +50,14 @@ type Replay struct {
 	NReduce    int      // Number of reduce tasks (for partitioning)
 }
 
+type FindSucReplay struct {
+	SuccAddress string
+}
+type FindSucRequest struct {
+	Identifier *big.Int
+	IPAddress  string
+}
+
 // Add your RPC definitions here.
 
 // Cook up a unique-ish UNIX-domain socket name
@@ -61,19 +69,24 @@ func coordinatorSock() string {
 	s += strconv.Itoa(os.Getuid())
 	return s
 }
-func call(rpcname string, args interface{}, reply interface{}, address string) bool {
+
+func (cr *ChordRing) call(address string, rpcname string, args interface{}, reply interface{}) bool {
 	// c, err := rpc.DialHTTP("tcp", "127.0.0.1"+":1234")
 	//sockname := coordinatorSock()
-	c, err := rpc.DialHTTP("tcp", address)
+	//ListObjectMethods(cr)
+	fmt.Println("call", address)
+	c, err := rpc.Dial("tcp", address)
 	if err != nil {
 		log.Fatal("dialing:", err)
 	}
 	defer c.Close()
+
 	err = c.Call(rpcname, args, reply)
-	if err == nil {
-		return true
+
+	if err != nil {
+		log.Println("Call service error: ", err)
+		return false
 	}
 
-	fmt.Println(err)
-	return false
+	return true
 }
