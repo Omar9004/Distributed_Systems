@@ -69,11 +69,17 @@ func coordinatorSock() string {
 	s += strconv.Itoa(os.Getuid())
 	return s
 }
+func (cr *ChordRing) MakeCall(coordinatorAddress string, callFunc string, args *FindSucRequest) FindSucReplay {
+	replay := FindSucReplay{}
 
+	makeCall := cr.call(coordinatorAddress, callFunc, &args, &replay)
+
+	if !makeCall {
+		fmt.Printf("Failed to call: %d, at node's IP address of: %s!\n", callFunc, coordinatorAddress)
+	}
+	return replay
+}
 func (cr *ChordRing) call(address string, rpcname string, args interface{}, reply interface{}) bool {
-	// c, err := rpc.DialHTTP("tcp", "127.0.0.1"+":1234")
-	//sockname := coordinatorSock()
-	//ListObjectMethods(cr)
 	fmt.Println("call", address)
 	c, err := rpc.Dial("tcp", address)
 	if err != nil {

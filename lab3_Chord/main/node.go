@@ -67,7 +67,7 @@ func NewNode(args *InputArgs) *ChordRing {
 	cr.FullAddress = IpPort
 
 	//Initializing node's Identifier
-	cr.Identifier = IdentifierGen(cr.IPAddress)
+	cr.Identifier = IdentifierGen(cr.FullAddress)
 
 	//Initializing node's FingerTable
 	cr.FingerTable = make([]finger, m+1)
@@ -99,10 +99,21 @@ func (cr *ChordRing) FingerTableInit() {
 	}
 }
 
-func (cr *ChordRing) getFingerTable() {}
+func (cr *ChordRing) FindClosetFinger(id *big.Int) string {
+	for i := 0; i < len(cr.FingerTable); i++ {
+		sucReplay := cr.MakeCall(cr.FingerTable[i].IPAddress, "ChordRing.GetSucId", &FindSucRequest{})
+		SucId := IdentifierGen(sucReplay.SuccAddress)
+		isBetween := between(cr.Identifier, module(SucId), id, false)
+		if isBetween {
+			return cr.FingerTable[i].IPAddress
+		}
+
+	}
+	return cr.Successors[0]
+}
 
 func (cr *ChordRing) GetSucId(args *FindSucRequest, replay *FindSucReplay) error {
-	replay.SuccAddress = cr.IPAddress
+	replay.SuccAddress = cr.FullAddress
 	fmt.Printf("GetSucId: %v \n", replay)
 	return nil
 }
@@ -141,18 +152,27 @@ func (cr *ChordRing) NodeServer() {
 }
 
 func (cr *ChordRing) FindSuccessor(args *FindSucRequest, replay *FindSucReplay) error {
-	fmt.Printf("FindSuccessor: %s\n", args.IPAddress)
-	newReplay := FindSucReplay{}
+	fmt.Printf("Joined Node ip: %s\n", args.IPAddress)
+	fmt.Printf("Joined Node id: %s\n", args.Identifier)
+	newReplay := cr.MakeCall(cr.Successors[0], "ChordRing.GetSucId", args)
 
-	if !cr.call(cr.Successors[0], "ChordRing.GetSucId", FindSucRequest{}, &newReplay) {
-		return fmt.Errorf("Faild to reach GetSucID %v\n", newReplay)
-	}
+	//if !cr.call(cr.Successors[0], "ChordRing.GetSucId", FindSucRequest{}, &newReplay) {
+	//	return fmt.Errorf("Faild to reach GetSucID %v\n", newReplay)
+	//}
 	idSuc := IdentifierGen(newReplay.SuccAddress)
-	fmt.Printf("Id for Succ: %s\n", idSuc)
-	isBetween := between(cr.Identifier, idSuc, hashString(newReplay.SuccAddress), true)
+	isBetween := between(cr.Identifier, module(args.Identifier), idSuc, true)
 	if isBetween {
-		fmt.Println("Found successor in between")
+		fmt.Printf("Found successor in between: %s\n", args.IPAddress)
+
+		replay.SuccAddress = cr.Successors[0]
+		fmt.Println(replay.SuccAddress)
+	} else { //Otherwise search on the finger table of this node
+		sucAddress := cr.FindClosetFinger(idSuc)
+		sucReplay := cr.MakeCall(sucAddress, "ChordRing.FindSuccessor", args)
+		replay.SuccAddress = sucReplay.SuccAddress
+
 	}
+
 	fmt.Printf("Found suc between %s\n", isBetween)
 	return nil
 }

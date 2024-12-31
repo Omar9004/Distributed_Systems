@@ -23,37 +23,7 @@ func main() {
 		fmt.Printf("Argumnets %v\n", arguments)
 		fmt.Printf("chord %v\n", chord)
 		chord.NodeServer()
-		//err := rpc.Register(chord)
-		//if err != nil {
-		//	fmt.Printf("Error with rpc Register %v:\n", err.Error())
-		//}
-		////rpc.HandleHTTP()
-		//
-		//// sockname := coordinatorSock()
-		//// os.Remove(sockname)
-		//addr, err := net.ResolveTCPAddr("tcp", chord.FullAddress)
-		//
-		//if err != nil {
-		//	log.Fatal("Inaccessible IP", err.Error())
-		//}
-		//listener, e := net.Listen("tcp", addr.String())
-		//if e != nil {
-		//	log.Fatal("listen error:", e)
-		//}
-		//fmt.Printf("NodeServer is running at %s\n", chord.FullAddress)
-		//defer listener.Close()
-		//go func(listener net.Listener) {
-		//	for {
-		//		conn, err := listener.Accept()
-		//		if err != nil {
-		//			log.Printf("Error accepting connection: %s\n", err)
-		//			continue
-		//		}
-		//
-		//		go jsonrpc.ServeConn(conn)
-		//
-		//	}
-		//}(listener)
+
 		switch arguments.InputArgsState {
 		case InvalidArgs:
 

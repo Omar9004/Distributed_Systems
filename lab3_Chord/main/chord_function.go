@@ -61,21 +61,20 @@ func (cr *ChordRing) Notify(args *FindSucRequest, replay *FindSucReplay) {
 func (cr *ChordRing) JoinChord(joinNodeAdd string, args *FindSucRequest, replay *FindSucReplay) error {
 	//extractIP := strings.Split(joinNodeAdd, ":")[0]
 	//joinId := IdentifierGen(extractIP)
-	findSuc := FindSucReplay{}
-	getReq := FindSucRequest{}
-	getReq.IPAddress = cr.IPAddress
-	getReq.Identifier = cr.Identifier
+	getReq := FindSucRequest{
+		cr.Identifier,
+		cr.FullAddress,
+	}
 	fmt.Println("joinNodeAdd", joinNodeAdd)
-	if !cr.call(joinNodeAdd, "ChordRing.FindSuccessor", &getReq, &findSuc) {
-		return fmt.Errorf("failed to find successor for node %s", joinNodeAdd)
-	}
-	newReq := FindSucRequest{}
-	cr.Successors[0] = replay.SuccAddress
-	newReq.IPAddress = cr.Successors[0]
+	findSucReply := cr.MakeCall(joinNodeAdd, "ChordRing.FindSuccessor", &getReq)
 
-	if !cr.call(cr.Successors[0], "ChordRing.Notify", newReq, replay) {
-		return fmt.Errorf("the notification call is unsuccessful %s", cr.Successors[0])
-	}
+	notifyReq := FindSucRequest{}
+	cr.Successors[0] = findSucReply.SuccAddress
+	fmt.Printf("Found the successor: %s\n", replay.SuccAddress)
+	notifyReq.IPAddress = cr.Successors[0]
+
+	notifyReplay := cr.MakeCall(cr.Successors[0], "ChordRing.Notify", &notifyReq)
+	fmt.Println(notifyReplay)
 
 	return nil
 }
