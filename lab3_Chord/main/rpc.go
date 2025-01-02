@@ -20,18 +20,23 @@ import "strconv"
 type taskType int
 type currentStatus int
 
-//const (
+// const (
+//
 //	WorkerIdle = iota
 //	WorkerFinishMap
 //	WorkerFinishReduce
-//)
 //
-//const (
+// )
+//
+// const (
+//
 //	MapTask = iota
 //	ReduceTask
 //	WaitForTask
 //	NoTask
-//)
+//
+// )
+type InfoType int
 
 // ReqArgs Request type arguments
 type ReqArgs struct {
@@ -41,6 +46,13 @@ type ReqArgs struct {
 	//intermediateFiles []string
 	//ID int
 }
+
+const (
+	GetIP = iota
+	GetID
+	GetSuc
+	GetPre
+)
 
 // Replay or respond type from the coordinator
 type Replay struct {
@@ -52,10 +64,26 @@ type Replay struct {
 
 type FindSucReplay struct {
 	SuccAddress string
+	Identifier  *big.Int
+	Successor   string
+	Predecessor string
 }
 type FindSucRequest struct {
+	InfoType   InfoType
 	Identifier *big.Int
 	IPAddress  string
+}
+
+type NotifyArgs struct {
+	InfoType     InfoType
+	NewIPAddress string
+	Identifier   *big.Int
+}
+
+type NotifyReply struct {
+	IPAddress  string
+	Identifier *big.Int
+	isComplete bool
 }
 
 // Add your RPC definitions here.
@@ -69,8 +97,19 @@ func coordinatorSock() string {
 	s += strconv.Itoa(os.Getuid())
 	return s
 }
-func (cr *ChordRing) MakeCall(coordinatorAddress string, callFunc string, args *FindSucRequest) FindSucReplay {
+func (cr *ChordRing) CallFS(coordinatorAddress string, callFunc string, args *FindSucRequest) FindSucReplay {
 	replay := FindSucReplay{}
+
+	makeCall := cr.call(coordinatorAddress, callFunc, &args, &replay)
+
+	if !makeCall {
+		fmt.Printf("Failed to call: %d, at node's IP address of: %s!\n", callFunc, coordinatorAddress)
+	}
+	return replay
+}
+
+func (cr *ChordRing) CallNotify(coordinatorAddress string, callFunc string, args *NotifyArgs) NotifyReply {
+	replay := NotifyReply{}
 
 	makeCall := cr.call(coordinatorAddress, callFunc, &args, &replay)
 
