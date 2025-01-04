@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -124,6 +125,10 @@ func (cr *ChordRing) GetNodeInfo(args *FindSucRequest, replay *FindSucReplay) er
 		replay.Successor = cr.Successors[0]
 	case GetPre:
 		replay.Predecessor = cr.Predecessor
+	case GetSuccessors:
+		replay.Successors = cr.Successors
+	default:
+		return errors.New("invalid info type")
 	}
 	return nil
 }
@@ -162,8 +167,8 @@ func (cr *ChordRing) NodeServer() {
 }
 
 func (cr *ChordRing) FindSuccessor(args *FindSucRequest, replay *FindSucReplay) error {
-	fmt.Printf("Joined Node ip: %s\n", args.IPAddress)
-	fmt.Printf("Joined Node id: %s\n", args.Identifier)
+	//fmt.Printf("Joined Node ip: %s\n", args.IPAddress)
+	//fmt.Printf("Joined Node id: %s\n", args.Identifier)
 	requestInfo := FindSucRequest{}
 	requestInfo.InfoType = GetIP
 	newReplay := cr.CallFS(cr.Successors[0], "ChordRing.GetNodeInfo", &requestInfo)
@@ -174,7 +179,7 @@ func (cr *ChordRing) FindSuccessor(args *FindSucRequest, replay *FindSucReplay) 
 	idSuc := IdentifierGen(newReplay.SuccAddress)
 	isBetween := between(cr.Identifier, module(args.Identifier), idSuc, true)
 	if isBetween {
-		fmt.Printf("Found successor in between: %s\n", args.IPAddress)
+		//fmt.Printf("Found successor in between: %s\n", args.IPAddress)
 
 		replay.SuccAddress = newReplay.SuccAddress
 
@@ -183,7 +188,7 @@ func (cr *ChordRing) FindSuccessor(args *FindSucRequest, replay *FindSucReplay) 
 		sucReplay := cr.CallFS(sucAddress, "ChordRing.FindSuccessor", args)
 		replay.SuccAddress = sucReplay.SuccAddress
 	}
-	fmt.Printf("Found the successor: %s\n", replay.SuccAddress)
-	fmt.Printf("Found suc between %s\n", isBetween)
+	//fmt.Printf("Found the successor: %s\n", replay.SuccAddress)
+	//fmt.Printf("Found suc between %s\n", isBetween)
 	return nil
 }

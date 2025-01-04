@@ -7,6 +7,7 @@ package main
 //
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"math/big"
@@ -52,6 +53,7 @@ const (
 	GetID
 	GetSuc
 	GetPre
+	GetSuccessors
 )
 
 // Replay or respond type from the coordinator
@@ -67,6 +69,8 @@ type FindSucReplay struct {
 	Identifier  *big.Int
 	Successor   string
 	Predecessor string
+	Successors  []string
+	AllInfo     *ChordRing
 }
 type FindSucRequest struct {
 	InfoType   InfoType
@@ -86,6 +90,18 @@ type NotifyReply struct {
 	isComplete bool
 }
 
+type StabilizeArgs struct {
+	InfoType     InfoType
+	NewIPAddress string
+	Identifier   *big.Int
+}
+
+type StabilizeReplay struct {
+	IPAddress  string
+	Identifier *big.Int
+	isComplete bool
+}
+
 // Add your RPC definitions here.
 
 // Cook up a unique-ish UNIX-domain socket name
@@ -97,26 +113,39 @@ func coordinatorSock() string {
 	s += strconv.Itoa(os.Getuid())
 	return s
 }
-func (cr *ChordRing) CallFS(coordinatorAddress string, callFunc string, args *FindSucRequest) FindSucReplay {
+
+// CallFS is dedicated to serve the FindSuccessor procedure
+func (cr *ChordRing) CallFS(NodeAddress string, callFunc string, args *FindSucRequest) FindSucReplay {
 	replay := FindSucReplay{}
 
-	makeCall := cr.call(coordinatorAddress, callFunc, &args, &replay)
+	makeCall := cr.call(NodeAddress, callFunc, &args, &replay)
 
 	if !makeCall {
-		fmt.Printf("Failed to call: %d, at node's IP address of: %s!\n", callFunc, coordinatorAddress)
+		fmt.Printf("Failed to call: %d, at node's IP address of: %s!\n", callFunc, NodeAddress)
 	}
 	return replay
 }
 
-func (cr *ChordRing) CallNotify(coordinatorAddress string, callFunc string, args *NotifyArgs) NotifyReply {
+// CallNotify is dedicated to serve the Notify procedure
+func (cr *ChordRing) CallNotify(NodeAddress string, callFunc string, args *NotifyArgs) NotifyReply {
 	replay := NotifyReply{}
 
-	makeCall := cr.call(coordinatorAddress, callFunc, &args, &replay)
+	makeCall := cr.call(NodeAddress, callFunc, &args, &replay)
 
 	if !makeCall {
-		fmt.Printf("Failed to call: %d, at node's IP address of: %s!\n", callFunc, coordinatorAddress)
+		fmt.Printf("Failed to call: %d, at node's IP address of: %s!\n", callFunc, NodeAddress)
 	}
 	return replay
+}
+func (cr *ChordRing) CallStabilize(NodeAddress string, callFunc string, args *FindSucRequest) (FindSucReplay, error) {
+	replay := FindSucReplay{}
+
+	makeCall := cr.call(NodeAddress, callFunc, &args, &replay)
+
+	if !makeCall {
+		return replay, errors.New("Failed to call the node (At the Stabilize stage)")
+	}
+	return replay, nil
 }
 func (cr *ChordRing) call(address string, rpcname string, args interface{}, reply interface{}) bool {
 	fmt.Println("call", address)

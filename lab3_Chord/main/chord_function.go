@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"math/big"
+	"net/rpc"
+	"time"
 )
 
 const m = 6
@@ -15,9 +17,9 @@ type ChordRing struct {
 	//LocalNode      Node    //Local node that acts as entry point for the chord operations
 	//Nodes          []*Node //Maintains a list of nodes exist in the ring
 	HashBits       int //Defines the size of the hashing space
-	StabilizeTime  int
-	FixFingersTime int
-	CheckPredTime  int
+	StabilizeTime  time.Duration
+	FixFingersTime time.Duration
+	CheckPredTime  time.Duration
 	SuccessorNum   int
 
 	//Node's instances
@@ -118,4 +120,46 @@ func (cr *ChordRing) JoinChord(joinNodeAdd string, args *FindSucRequest, replay 
 	fmt.Printf("The successor node: %s\n", cr.Successors[0])
 
 	return nil
+}
+
+func (cr *ChordRing) Stabilize() error {
+
+	//1. Check on the Successor's predecessor pointer whether it is point back to the current node or not.
+	//By calling the successor's predecessor node
+	//*//
+
+	newReq := FindSucRequest{}
+	newReq.InfoType = GetPre // Get the Successor's predecessor
+	preReplay, err := cr.CallStabilize(cr.Successors[0], "ChordRing.GetNodeInfo", &newReq)
+	fmt.Printf("The predeceussor node of the successor: %v\n", preReplay.Predecessor)
+	if err == nil && preReplay.Predecessor != "" {
+		newReq.InfoType = GetID
+
+		sucReplay, _ := cr.CallStabilize(preReplay.Predecessor, "ChordRing.GetNodeInfo", &newReq)
+
+		sucId := IdentifierGen(cr.Successors[0]) //Extract the successor's ID from its ip address
+		sucPred := sucReplay.Identifier          //Successor's predecessor ID
+		isBetween := between(cr.Identifier, sucPred, sucId, false)
+		fmt.Printf("isBetween the predecessor and the current node's successor: %v\n", isBetween)
+		if isBetween {
+			cr.Successors[0] = preReplay.Predecessor
+			fmt.Printf("New successor: %s, Current Node: %s\n", cr.Successors[0], cr.FullAddress)
+		}
+	}
+	//Notify the successor about its predecessor
+	notifyReq := NotifyArgs{}
+	notifyReq.NewIPAddress = cr.FullAddress
+	cr.CallNotify(cr.Successors[0], "ChordRing.NotifyRPC", &notifyReq)
+
+	return nil
+}
+
+func (cr *ChordRing) Check_predecessor() {
+	if cr.Predecessor != "" {
+		_, err := rpc.Dial("tcp", cr.Predecessor)
+		if err != nil {
+			fmt.Printf("The Predecessor:%s of the node: %s is nolonger avalaible\n", cr.Predecessor, cr.FullAddress)
+			cr.Predecessor = ""
+		}
+	}
 }
