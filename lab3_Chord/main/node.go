@@ -4,10 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math"
 	"math/big"
 	"net"
 	"net/rpc"
+	"os"
 )
 
 type Key string
@@ -53,20 +53,12 @@ func (cr *ChordRing) ParseIP(args *InputArgs) {
 	}
 }
 
-// IdentifierGen Generate an identifier for a given IP address
-func IdentifierGen(IPAdd string) *big.Int {
-	var identifier *big.Int
-	identifier = hashString(IPAdd)
-	identifier.Mod(identifier, big.NewInt(int64(math.Pow(2, m))))
-	return identifier
-}
 func NewNode(args *InputArgs) *ChordRing {
 	cr := &ChordRing{}
 	cr.ParseIP(args)
 	//Merge node's ip address and port into one variable
 	IpPort := fmt.Sprintf("%s:%d", cr.IPAddress, args.Port)
 	cr.FullAddress = IpPort
-
 	//Initializing node's Identifier
 	cr.Identifier = IdentifierGen(cr.FullAddress)
 
@@ -78,6 +70,17 @@ func NewNode(args *InputArgs) *ChordRing {
 	cr.Predecessor = ""
 	cr.Successors = make([]string, args.SuccessorNum)
 	cr.SuccessorInit()
+
+	//Initialize the node's Bucket
+	cr.Bucket = make(map[*big.Int]string)
+
+	FolderName := FolderPathGen(cr.Identifier)
+	// Create a directory for a node for saving the assigned files on it.
+	err := os.MkdirAll(FolderName, os.ModePerm)
+	if err != nil {
+		fmt.Println("Error creating directory")
+	}
+	cr.NodeFolder = FolderName
 	return cr
 }
 
@@ -93,20 +96,21 @@ func (cr *ChordRing) FingerTableInit() {
 	cr.FingerTable[0].Identifier = cr.Identifier
 	cr.FingerTable[0].IPAddress = cr.IPAddress
 	for i := 1; i < len(cr.FingerTable); i++ {
-		addPart := new(big.Int).Add(cr.Identifier, big.NewInt(int64(math.Pow(2, float64(i-1))))) // Addition part
-		addPart.Mod(addPart, big.NewInt(int64(math.Pow(2, m))))
+		addPart := jump(cr.IPAddress, i) //Hashing an IP address for given node
 		cr.FingerTable[i].Identifier = addPart
-		cr.FingerTable[i].IPAddress = cr.IPAddress
+		cr.FingerTable[i].IPAddress = cr.FullAddress
 	}
 }
 
 func (cr *ChordRing) FindClosetFinger(id *big.Int) string {
 	requestInfo := FindSucRequest{}
 	requestInfo.InfoType = GetIP
-	for i := len(cr.FingerTable); i > 0; i-- {
-		sucReplay := cr.CallFS(cr.FingerTable[i].IPAddress, "ChordRing.GetNodeInfo", &requestInfo)
+	fmt.Printf("FingerTable Size: %d\n", len(cr.FingerTable))
+	for i := len(cr.FingerTable) - 1; i > 0; i-- {
+		//sucReplay := CallFS(cr.FingerTable[i].IPAddress, "ChordRing.GetNodeInfo", &requestInfo)
+		sucReplay := MakeCall[FindSucRequest, FindSucReplay](cr.FingerTable[i].IPAddress, "ChordRing.GetNodeInfo", requestInfo)
 		SucId := IdentifierGen(sucReplay.SuccAddress)
-		isBetween := between(cr.Identifier, module(SucId), id, false)
+		isBetween := between(cr.Identifier, SucId.Mod(SucId, hashMod), id, false)
 		if isBetween {
 			return cr.FingerTable[i].IPAddress
 		}
@@ -118,6 +122,7 @@ func (cr *ChordRing) FindClosetFinger(id *big.Int) string {
 func (cr *ChordRing) GetNodeInfo(args *FindSucRequest, replay *FindSucReplay) error {
 	switch args.InfoType {
 	case GetIP:
+		fmt.Printf("Get IP: %s\n", cr.FullAddress)
 		replay.SuccAddress = cr.FullAddress
 	case GetID:
 		replay.Identifier = cr.Identifier
@@ -166,18 +171,78 @@ func (cr *ChordRing) NodeServer() {
 	}(listener)
 }
 
+func (cr *ChordRing) StoreFile(args *StoreFileArgs, replay *StoreFileReply) error {
+	key := args.Key
+
+	//if file exists on the current directory /main, then move it to the node's folder
+	if _, err := os.Stat(args.FileName); err == nil {
+		nodeFolder := cr.NodeFolder
+		err := os.Rename(args.FileName, nodeFolder+"/"+args.FileName)
+		if err != nil {
+			fmt.Printf("Error moving file to %s", nodeFolder+"/"+args.FileName)
+			replay.IsSaved = false
+		}
+		cr.Bucket[key] = args.FileName
+
+	} else {
+		cr.Bucket[key] = args.FileName
+		replay.IsSaved = true
+	}
+	return nil
+}
+
+//func (cr *ChordRing) FindSuccessor(args *FindSucRequest, replay *FindSucReplay) error {
+//	//fmt.Printf("Joined Node ip: %s\n", args.IPAddress)
+//	//fmt.Printf("Joined Node id: %s\n", args.Identifier)
+//	cr.mutex.Lock()
+//	defer cr.mutex.Unlock()
+//	requestInfo := FindSucRequest{}
+//	requestInfo.InfoType = GetIP
+//	joinNodeID := args.Identifier.Mod(args.Identifier, hashMod)
+//	//newReplay := CallFS(cr.Successors[0], "ChordRing.GetNodeInfo", &requestInfo)
+//	newReplay := MakeCall[FindSucRequest, FindSucReplay](cr.Successors[0], "ChordRing.GetNodeInfo", requestInfo)
+//
+//	//if !cr.call(cr.Successors[0], "ChordRing.GetSucId", FindSucRequest{}, &newReplay) {
+//	//	return fmt.Errorf("Faild to reach GetSucID %v\n", newReplay)
+//	//}
+//	idSuc := IdentifierGen(newReplay.SuccAddress)
+//	fmt.Println(args.Identifier)
+//
+//	isBetween := between(cr.Identifier, joinNodeID, idSuc, true)
+//	if isBetween {
+//		//fmt.Printf("Found successor in between: %s\n", args.IPAddress)
+//
+//		replay.SuccAddress = newReplay.SuccAddress
+//
+//	} else { //Otherwise search on the finger table of this node
+//		sucAddress := cr.FindClosetFinger(idSuc)
+//		//sucReplay := CallFS(sucAddress, "ChordRing.FindSuccessor", args)
+//		sucReplay := MakeCall[FindSucRequest, FindSucReplay](sucAddress, "ChordRing.FindSuccessor", requestInfo)
+//
+//		replay.SuccAddress = sucReplay.SuccAddress
+//	}
+//	//fmt.Printf("Found the successor: %s\n", replay.SuccAddress)
+//	//fmt.Printf("Found suc between %s\n", isBetween)
+//	return nil
+//}
+
 func (cr *ChordRing) FindSuccessor(args *FindSucRequest, replay *FindSucReplay) error {
 	//fmt.Printf("Joined Node ip: %s\n", args.IPAddress)
 	//fmt.Printf("Joined Node id: %s\n", args.Identifier)
+	cr.mutex.Lock()
+	defer cr.mutex.Unlock()
 	requestInfo := FindSucRequest{}
 	requestInfo.InfoType = GetIP
-	newReplay := cr.CallFS(cr.Successors[0], "ChordRing.GetNodeInfo", &requestInfo)
+	joinNodeID := args.Identifier.Mod(args.Identifier, hashMod)
+	//newReplay := CallFS(cr.Successors[0], "ChordRing.GetNodeInfo", &requestInfo)
+	newReplay := MakeCall[FindSucRequest, FindSucReplay](cr.Successors[0], "ChordRing.GetNodeInfo", requestInfo)
 
 	//if !cr.call(cr.Successors[0], "ChordRing.GetSucId", FindSucRequest{}, &newReplay) {
 	//	return fmt.Errorf("Faild to reach GetSucID %v\n", newReplay)
 	//}
 	idSuc := IdentifierGen(newReplay.SuccAddress)
-	isBetween := between(cr.Identifier, module(args.Identifier), idSuc, true)
+	fmt.Println(args.Identifier)
+	isBetween := between(cr.Identifier, joinNodeID, idSuc, true)
 	if isBetween {
 		//fmt.Printf("Found successor in between: %s\n", args.IPAddress)
 
@@ -185,7 +250,10 @@ func (cr *ChordRing) FindSuccessor(args *FindSucRequest, replay *FindSucReplay) 
 
 	} else { //Otherwise search on the finger table of this node
 		sucAddress := cr.FindClosetFinger(idSuc)
-		sucReplay := cr.CallFS(sucAddress, "ChordRing.FindSuccessor", args)
+		//sucReplay := CallFS(sucAddress, "ChordRing.FindSuccessor", args)
+		newArgs := FindSucRequest{Identifier: joinNodeID}
+		sucReplay := MakeCall[FindSucRequest, FindSucReplay](sucAddress, "ChordRing.FindSuccessor", newArgs)
+
 		replay.SuccAddress = sucReplay.SuccAddress
 	}
 	//fmt.Printf("Found the successor: %s\n", replay.SuccAddress)

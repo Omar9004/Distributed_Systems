@@ -119,3 +119,11 @@ func (args *InputArgs) ArgsValidation() bool {
 	fmt.Println("Validation failed: Invalid InputArgsState")
 	return false
 }
+
+func menuPrinter() {
+	fmt.Println("Choose the function name by typing it:")
+	fmt.Println("1.Lookup")
+	fmt.Println("2.StoreFile")
+	fmt.Println("3.PrintState")
+	fmt.Println("q to Quit")
+}

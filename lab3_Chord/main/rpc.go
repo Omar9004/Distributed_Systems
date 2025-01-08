@@ -101,6 +101,14 @@ type StabilizeReplay struct {
 	Identifier *big.Int
 	isComplete bool
 }
+type StoreFileArgs struct {
+	Key      *big.Int
+	FileName string
+}
+
+type StoreFileReply struct {
+	IsSaved bool
+}
 
 // Add your RPC definitions here.
 
@@ -114,11 +122,48 @@ func coordinatorSock() string {
 	return s
 }
 
-// CallFS is dedicated to serve the FindSuccessor procedure
-func (cr *ChordRing) CallFS(NodeAddress string, callFunc string, args *FindSucRequest) FindSucReplay {
-	replay := FindSucReplay{}
+//// CallFS is dedicated to serve the FindSuccessor procedure
+//func CallFS(NodeAddress string, callFunc string, args *FindSucRequest) FindSucReplay {
+//	replay := FindSucReplay{}
+//
+//	makeCall := call(NodeAddress, callFunc, &args, &replay)
+//
+//	if !makeCall {
+//		fmt.Printf("Failed to call: %d, at node's IP address of: %s!\n", callFunc, NodeAddress)
+//	}
+//	return replay
+//}
 
-	makeCall := cr.call(NodeAddress, callFunc, &args, &replay)
+// MakeCall Calls the call function to conduct a rpc call.
+// This function is generic meaning it can take any struct type possible.
+func MakeCall[ArgsType any, ReplayType any](NodeAddress string, callFunc string, args ArgsType) ReplayType {
+	var replay ReplayType
+
+	makeCall := call(NodeAddress, callFunc, args, &replay)
+
+	if !makeCall {
+		fmt.Printf("Failed to call: %s, at node's IP address of: %s!\n", callFunc, NodeAddress)
+	}
+	return replay
+}
+
+// // CallNotify is dedicated to serve the Notify procedure
+//
+//	func CallNotify(NodeAddress string, callFunc string, args *NotifyArgs) NotifyReply {
+//		replay := NotifyReply{}
+//
+//		makeCall := call(NodeAddress, callFunc, &args, &replay)
+//
+//		if !makeCall {
+//			fmt.Printf("Failed to call: %d, at node's IP address of: %s!\n", callFunc, NodeAddress)
+//		}
+//		return replay
+//	}
+
+func (cr *ChordRing) CallStore(NodeAddress string, callFunc string, args *StoreFileArgs) StoreFileReply {
+	replay := StoreFileReply{}
+	ListObjectMethods(cr)
+	makeCall := call(NodeAddress, callFunc, &args, &replay)
 
 	if !makeCall {
 		fmt.Printf("Failed to call: %d, at node's IP address of: %s!\n", callFunc, NodeAddress)
@@ -126,29 +171,17 @@ func (cr *ChordRing) CallFS(NodeAddress string, callFunc string, args *FindSucRe
 	return replay
 }
 
-// CallNotify is dedicated to serve the Notify procedure
-func (cr *ChordRing) CallNotify(NodeAddress string, callFunc string, args *NotifyArgs) NotifyReply {
-	replay := NotifyReply{}
-
-	makeCall := cr.call(NodeAddress, callFunc, &args, &replay)
-
-	if !makeCall {
-		fmt.Printf("Failed to call: %d, at node's IP address of: %s!\n", callFunc, NodeAddress)
-	}
-	return replay
-}
-func (cr *ChordRing) CallStabilize(NodeAddress string, callFunc string, args *FindSucRequest) (FindSucReplay, error) {
+func CallStabilize(NodeAddress string, callFunc string, args *FindSucRequest) (FindSucReplay, error) {
 	replay := FindSucReplay{}
-
-	makeCall := cr.call(NodeAddress, callFunc, &args, &replay)
+	makeCall := call(NodeAddress, callFunc, &args, &replay)
 
 	if !makeCall {
 		return replay, errors.New("Failed to call the node (At the Stabilize stage)")
 	}
 	return replay, nil
 }
-func (cr *ChordRing) call(address string, rpcname string, args interface{}, reply interface{}) bool {
-	fmt.Println("call", address)
+func call(address string, rpcname string, args interface{}, reply interface{}) bool {
+	//fmt.Println("call", address)
 	c, err := rpc.Dial("tcp", address)
 	if err != nil {
 		log.Fatal("dialing:", err)
