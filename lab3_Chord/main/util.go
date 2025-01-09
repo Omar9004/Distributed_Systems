@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-const keySize = 64
+const m = 8 // 8 bits, range 0-255
 
 var two = big.NewInt(2)
 var hashMod = new(big.Int).Exp(two, big.NewInt(m), nil)
@@ -54,7 +54,7 @@ func between(start, elt, end *big.Int, inclusive bool) bool {
 }
 
 func jump(address string, fingerentry int) *big.Int {
-	n := hashString(address)
+	n := IdentifierGen(address)
 	fingerentryminus1 := big.NewInt(int64(fingerentry) - 1)
 	jump := new(big.Int).Exp(two, fingerentryminus1, nil)
 	sum := new(big.Int).Add(n, jump)

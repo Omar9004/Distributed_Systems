@@ -1,15 +1,12 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"math/big"
-	"net/rpc"
+	//"net/rpc"
 	"sync"
 	"time"
 )
-
-const m = 6
 
 type finger struct {
 	Identifier *big.Int
@@ -49,11 +46,22 @@ func (cr *ChordRing) NewChordRing() {
 }
 
 func (cr *ChordRing) lookup(FileName string, NodeAddress string) (*big.Int, string) {
+
 	key := hashString(FileName)
 	key.Mod(key, hashMod)
 	lookupReq := FindSucRequest{Identifier: key}
 
-	fmt.Printf("lookupReq.Identifier: %s\n", lookupReq.Identifier)
+	//fmt.Printf("lookupReq.Identifier: %s\n", lookupReq.Identifier)
+	//newReplay := CallFS(NodeAddress, "ChordRing.FindSuccessor", &lookupReq)
+	newReplay := MakeCall[FindSucRequest, FindSucReplay](NodeAddress, "ChordRing.FindSuccessor", lookupReq)
+	return key, newReplay.SuccAddress
+}
+
+func (cr *ChordRing) lookupFingers(key *big.Int, NodeAddress string) (*big.Int, string) {
+
+	lookupReq := FindSucRequest{Identifier: key}
+
+	//fmt.Printf("lookupReq.Identifier: %s\n", lookupReq.Identifier)
 	//newReplay := CallFS(NodeAddress, "ChordRing.FindSuccessor", &lookupReq)
 	newReplay := MakeCall[FindSucRequest, FindSucReplay](NodeAddress, "ChordRing.FindSuccessor", lookupReq)
 	return key, newReplay.SuccAddress
@@ -133,50 +141,5 @@ func (cr *ChordRing) JoinChord(joinNodeAdd string, args *FindSucRequest, replay 
 	//CallNotify(cr.Successors[0], "ChordRing.NotifyRPC", &notifyReq)
 	MakeCall[NotifyArgs, NotifyReply](cr.Successors[0], "ChordRing.NotifyRPC", notifyReq)
 
-	return nil
-}
-
-func (cr *ChordRing) Stabilize() error {
-
-	//1. Check on the Successor's predecessor pointer whether it is point back to the current node or not.
-	//By calling the successor's predecessor node
-	//*//
-	cr.mutex.Lock()
-	defer cr.mutex.Unlock()
-	newReq := FindSucRequest{}
-	newReq.InfoType = GetPre // Get the Successor's predecessor
-	preReplay, err := CallStabilize(cr.Successors[0], "ChordRing.GetNodeInfo", &newReq)
-	//fmt.Printf("The predeceussor node of the successor: %v\n", preReplay.Predecessor)
-	if err == nil && preReplay.Predecessor != "" {
-		newReq.InfoType = GetID
-
-		sucReplay, _ := CallStabilize(preReplay.Predecessor, "ChordRing.GetNodeInfo", &newReq)
-
-		sucId := IdentifierGen(cr.Successors[0]) //Extract the successor's ID from its ip address
-		sucPred := sucReplay.Identifier          //Successor's predecessor ID
-		isBetween := between(cr.Identifier, sucPred, sucId, false)
-		//fmt.Printf("isBetween the predecessor and the current node's successor: %v\n", isBetween)
-		if isBetween {
-			cr.Successors[0] = preReplay.Predecessor
-			//fmt.Printf("New successor: %s, Current Node: %s\n", cr.Successors[0], cr.FullAddress)
-		}
-	}
-	//Notify the successor about its predecessor
-	notifyReq := NotifyArgs{}
-	notifyReq.NewIPAddress = cr.FullAddress
-	//CallNotify(cr.Successors[0], "ChordRing.NotifyRPC", &notifyReq)
-	MakeCall[NotifyArgs, NotifyReply](cr.Successors[0], "ChordRing.NotifyRPC", notifyReq)
-
-	return nil
-}
-
-func (cr *ChordRing) Check_predecessor() error {
-	if cr.Predecessor != "" {
-		_, err := rpc.Dial("tcp", cr.Predecessor)
-		if err != nil {
-			fmt.Printf("The Predecessor:%s of the node: %s is nolonger avalaible\n", cr.Predecessor, cr.FullAddress)
-			cr.Predecessor = ""
-		}
-	}
 	return nil
 }

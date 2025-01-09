@@ -122,18 +122,6 @@ func coordinatorSock() string {
 	return s
 }
 
-//// CallFS is dedicated to serve the FindSuccessor procedure
-//func CallFS(NodeAddress string, callFunc string, args *FindSucRequest) FindSucReplay {
-//	replay := FindSucReplay{}
-//
-//	makeCall := call(NodeAddress, callFunc, &args, &replay)
-//
-//	if !makeCall {
-//		fmt.Printf("Failed to call: %d, at node's IP address of: %s!\n", callFunc, NodeAddress)
-//	}
-//	return replay
-//}
-
 // MakeCall Calls the call function to conduct a rpc call.
 // This function is generic meaning it can take any struct type possible.
 func MakeCall[ArgsType any, ReplayType any](NodeAddress string, callFunc string, args ArgsType) ReplayType {

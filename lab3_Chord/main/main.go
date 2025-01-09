@@ -20,7 +20,7 @@ func main() {
 		//NewChordRing(&node)
 		//fmt.Printf("Argumnets %v\n", arguments)
 		//fmt.Printf("chord %v\n", chord)
-		fmt.Printf("%s\n", chord.Identifier)
+		//fmt.Printf("%s\n", chord.Identifier)
 		chord.NodeServer()
 		switch arguments.InputArgsState {
 		case InvalidArgs:
@@ -54,7 +54,9 @@ func main() {
 				fmt.Printf("The file has a key of : %s\n", key)
 			case "q":
 				if timers != nil {
-					timers[0].quit <- true
+					timers[0].quit <- true //Inform the Stabilizer about the node exiting to terminate the Goroutine
+					timers[1].quit <- true //Inform the FixFingers about the node exiting to terminate the Goroutine
+					timers[2].quit <- true //Inform the Check_Predecessor about the node exiting to terminate the Goroutine
 				}
 				os.Exit(0)
 			default:

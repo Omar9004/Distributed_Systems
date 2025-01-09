@@ -105,7 +105,7 @@ func (cr *ChordRing) FingerTableInit() {
 func (cr *ChordRing) FindClosetFinger(id *big.Int) string {
 	requestInfo := FindSucRequest{}
 	requestInfo.InfoType = GetIP
-	fmt.Printf("FingerTable Size: %d\n", len(cr.FingerTable))
+	//fmt.Printf("FingerTable Size: %d\n", len(cr.FingerTable))
 	for i := len(cr.FingerTable) - 1; i > 0; i-- {
 		//sucReplay := CallFS(cr.FingerTable[i].IPAddress, "ChordRing.GetNodeInfo", &requestInfo)
 		sucReplay := MakeCall[FindSucRequest, FindSucReplay](cr.FingerTable[i].IPAddress, "ChordRing.GetNodeInfo", requestInfo)
@@ -122,7 +122,6 @@ func (cr *ChordRing) FindClosetFinger(id *big.Int) string {
 func (cr *ChordRing) GetNodeInfo(args *FindSucRequest, replay *FindSucReplay) error {
 	switch args.InfoType {
 	case GetIP:
-		fmt.Printf("Get IP: %s\n", cr.FullAddress)
 		replay.SuccAddress = cr.FullAddress
 	case GetID:
 		replay.Identifier = cr.Identifier
@@ -191,46 +190,11 @@ func (cr *ChordRing) StoreFile(args *StoreFileArgs, replay *StoreFileReply) erro
 	return nil
 }
 
-//func (cr *ChordRing) FindSuccessor(args *FindSucRequest, replay *FindSucReplay) error {
-//	//fmt.Printf("Joined Node ip: %s\n", args.IPAddress)
-//	//fmt.Printf("Joined Node id: %s\n", args.Identifier)
-//	cr.mutex.Lock()
-//	defer cr.mutex.Unlock()
-//	requestInfo := FindSucRequest{}
-//	requestInfo.InfoType = GetIP
-//	joinNodeID := args.Identifier.Mod(args.Identifier, hashMod)
-//	//newReplay := CallFS(cr.Successors[0], "ChordRing.GetNodeInfo", &requestInfo)
-//	newReplay := MakeCall[FindSucRequest, FindSucReplay](cr.Successors[0], "ChordRing.GetNodeInfo", requestInfo)
-//
-//	//if !cr.call(cr.Successors[0], "ChordRing.GetSucId", FindSucRequest{}, &newReplay) {
-//	//	return fmt.Errorf("Faild to reach GetSucID %v\n", newReplay)
-//	//}
-//	idSuc := IdentifierGen(newReplay.SuccAddress)
-//	fmt.Println(args.Identifier)
-//
-//	isBetween := between(cr.Identifier, joinNodeID, idSuc, true)
-//	if isBetween {
-//		//fmt.Printf("Found successor in between: %s\n", args.IPAddress)
-//
-//		replay.SuccAddress = newReplay.SuccAddress
-//
-//	} else { //Otherwise search on the finger table of this node
-//		sucAddress := cr.FindClosetFinger(idSuc)
-//		//sucReplay := CallFS(sucAddress, "ChordRing.FindSuccessor", args)
-//		sucReplay := MakeCall[FindSucRequest, FindSucReplay](sucAddress, "ChordRing.FindSuccessor", requestInfo)
-//
-//		replay.SuccAddress = sucReplay.SuccAddress
-//	}
-//	//fmt.Printf("Found the successor: %s\n", replay.SuccAddress)
-//	//fmt.Printf("Found suc between %s\n", isBetween)
-//	return nil
-//}
-
 func (cr *ChordRing) FindSuccessor(args *FindSucRequest, replay *FindSucReplay) error {
 	//fmt.Printf("Joined Node ip: %s\n", args.IPAddress)
 	//fmt.Printf("Joined Node id: %s\n", args.Identifier)
-	cr.mutex.Lock()
-	defer cr.mutex.Unlock()
+	//cr.mutex.Lock()
+	//defer cr.mutex.Unlock()
 	requestInfo := FindSucRequest{}
 	requestInfo.InfoType = GetIP
 	joinNodeID := args.Identifier.Mod(args.Identifier, hashMod)
