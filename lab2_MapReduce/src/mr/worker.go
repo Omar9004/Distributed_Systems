@@ -3,19 +3,42 @@ package mr
 import (
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"io/ioutil"
+	"log"
+	"net"
+	"net/http"
+	"net/rpc"
 	"os"
 	"sort"
 	"time"
 )
-import "log"
-import "net/rpc"
-import "hash/fnv"
 
 // Map functions return a slice of KeyValue.
 type KeyValue struct {
 	Key   string
 	Value string
+}
+
+type TimerSetup struct {
+	sleepTime time.Duration
+	ticker    time.Ticker
+	quit      chan bool
+}
+
+func (t *TimerSetup) Run(task func()) {
+	t.ticker = *time.NewTicker(t.sleepTime)
+	go func() {
+		for {
+			select {
+			case <-t.ticker.C:
+				go task()
+			case <-t.quit:
+				t.ticker.Stop()
+				return
+			}
+		}
+	}()
 }
 
 //type ConnectionType struct {
@@ -35,9 +58,14 @@ func Worker(mapf func(string, string) []KeyValue, reducef func(string, []string)
 	//c := ConnectionType{CoordinatorIP: coordinatorAddress,
 	//	WorkerPort: workerPort}
 	replay := OurCall("Coordinator.RPCHandler", &ReqArgs{CurrentStatus: WorkerIdle}, coordinatorAddress)
-	//go c.WorkerServer()
+	coordinatorCheck := TimerSetup{sleepTime: time.Duration(1000) * time.Millisecond, quit: make(chan bool)}
+	coordinatorCheck.WorkerServer()
+	coordinatorCheck.Run(func() { coordinatorCheck.Coordinator_check(coordinatorAddress) })
+
 	for {
+
 		replay = OurCall("Coordinator.RPCHandler", &ReqArgs{CurrentStatus: WorkerIdle}, coordinatorAddress)
+
 		switch replay.TaskType {
 		case MapTask:
 			MapFunction(replay, ReqArgs{}, mapf, coordinatorAddress)
@@ -48,7 +76,8 @@ func Worker(mapf func(string, string) []KeyValue, reducef func(string, []string)
 			time.Sleep(500 * time.Millisecond)
 			continue
 		case NoTask:
-			return
+			coordinatorCheck.quit <- true
+			os.Exit(0)
 		default:
 			log.Fatalf("Unknown task type: %d\n", replay.TaskType)
 		}
@@ -112,7 +141,7 @@ func MapFunction(replay Replay, request ReqArgs, mapf func(string, string) []Key
 	}
 	request.ID = replay.ID
 	request.CurrentStatus = WorkerFinishMap
-	//fmt.Printf("Worker request args: %+v\n", request)
+	//fmt.Printf("Worker request ar	go coordinatorCheck.WorkerServer()
 
 	// Notify the coordinator that the Map task is completed
 	OurCall("Coordinator.TaskComplete", &request, address)
@@ -197,7 +226,8 @@ func call(rpcname string, args interface{}, reply interface{}, address string) b
 	c, err := rpc.DialHTTP("tcp", address)
 
 	if err != nil {
-		log.Fatal("dialing:", err)
+		log.Printf("dialing:", err)
+		return false
 	}
 	defer c.Close()
 	err = c.Call(rpcname, args, reply)
@@ -205,17 +235,30 @@ func call(rpcname string, args interface{}, reply interface{}, address string) b
 		return true
 	}
 
-	fmt.Println(err)
 	return false
 }
 
-//func (c *ConnectionType) WorkerServer() {
-//	rpc.Register(c)
-//	rpc.HandleHTTP()
-//	l, err := net.Listen("tcp", ":"+c.WorkerPort)
-//
-//	if err != nil {
-//		log.Fatalf("Server is not running", err)
-//	}
-//	go http.Serve(l, nil)
+func (t *TimerSetup) WorkerServer() {
+	//rpc.Register(t)
+	//rpc.HandleHTTP()
+	l, err := net.Listen("tcp", "192.168.0.106:"+"8080")
+	fmt.Printf("The worker is listning %s\n", l.Addr().String())
+	if err != nil {
+		log.Fatalf("Server is not running", err)
+	}
+	go http.Serve(l, nil)
+}
+
+func (t *TimerSetup) Coordinator_check(CoorAddress string) error {
+	_, err := rpc.DialHTTP("tcp", CoorAddress)
+
+	if err != nil {
+		log.Println("Coordinator is nolonger avaliable !!")
+
+	}
+	return nil
+}
+
+//func isEmpty(r Replay) bool {
+//	return r.ID == 0 && len(r.InputFiles) == 0 && r.NReduce == 0
 //}
