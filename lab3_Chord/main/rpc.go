@@ -7,6 +7,7 @@ package main
 //
 
 import (
+	"crypto/rsa"
 	"errors"
 	"fmt"
 	"log"
@@ -38,6 +39,7 @@ type currentStatus int
 //
 // )
 type InfoType int
+type StoringType int
 
 // ReqArgs Request type arguments
 type ReqArgs struct {
@@ -54,6 +56,13 @@ const (
 	GetSuc
 	GetPre
 	GetSuccessors
+	GetPubKey
+	GetPriKey
+)
+
+const (
+	MigrateNode = iota
+	MigrateUpload
 )
 
 // Replay or respond type from the coordinator
@@ -71,6 +80,8 @@ type FindSucReplay struct {
 	Predecessor string
 	Successors  []string
 	AllInfo     *ChordRing
+	PublicKey   *rsa.PublicKey
+	PrivateKey  *rsa.PrivateKey
 }
 type FindSucRequest struct {
 	InfoType   InfoType
@@ -79,9 +90,9 @@ type FindSucRequest struct {
 }
 
 type NotifyArgs struct {
-	InfoType     InfoType
-	NewIPAddress string
-	Identifier   *big.Int
+	InfoType   InfoType
+	NewAddress string
+	Identifier *big.Int
 }
 
 type NotifyReply struct {
@@ -102,11 +113,26 @@ type StabilizeReplay struct {
 	isComplete bool
 }
 type StoreFileArgs struct {
-	Key      *big.Int
-	FileName string
+	StoreType      StoringType
+	Key            *big.Int
+	FileName       string
+	PrevNodeID     *big.Int //Previous Node ID
+	Content        []byte
+	MigratedBucket map[*big.Int]string
+	isStored       bool
+	FileContent    map[*big.Int][]byte
 }
 
 type StoreFileReply struct {
+	IsSaved bool
+}
+
+type BackupArgs struct {
+	IPAddress string
+	Bucket    map[*big.Int]string
+}
+
+type BackupReply struct {
 	IsSaved bool
 }
 
@@ -172,7 +198,8 @@ func call(address string, rpcname string, args interface{}, reply interface{}) b
 	//fmt.Println("call", address)
 	c, err := rpc.Dial("tcp", address)
 	if err != nil {
-		log.Fatal("dialing:", err)
+		log.Printf("dialing:", err)
+		return false
 	}
 	defer c.Close()
 

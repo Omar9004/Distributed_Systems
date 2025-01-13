@@ -28,20 +28,19 @@ func (t *TimerSetup) Run(task func()) {
 	}()
 }
 func (cr *ChordRing) initDurations(args *InputArgs) []*TimerSetup {
-	if args.InputArgsState != NewChord {
-		timers := []*TimerSetup{
-			{sleepTime: time.Duration(args.Stabilize) * time.Millisecond, quit: make(chan bool)},
-			{sleepTime: time.Duration(args.FixFingers) * time.Millisecond, quit: make(chan bool)},
-			{sleepTime: time.Duration(args.CheckPredecessor) * time.Millisecond, quit: make(chan bool)},
-		}
 
-		timers[0].Run(func() { cr.Stabilize() })
-		timers[1].Run(func() { cr.FixFingers() })
-		timers[2].Run(func() { cr.Check_predecessor() })
-
-		return timers
+	timers := []*TimerSetup{
+		{sleepTime: time.Duration(args.Stabilize) * time.Millisecond, quit: make(chan bool)},
+		{sleepTime: time.Duration(args.FixFingers) * time.Millisecond, quit: make(chan bool)},
+		{sleepTime: time.Duration(args.CheckPredecessor) * time.Millisecond, quit: make(chan bool)},
 	}
-	return nil
+
+	timers[0].Run(func() { cr.Stabilize() })
+	timers[1].Run(func() { cr.FixFingers() })
+	timers[2].Run(func() { cr.Check_predecessor() })
+
+	return timers
+
 }
 
 func (cr *ChordRing) Stabilize() error {
@@ -49,8 +48,9 @@ func (cr *ChordRing) Stabilize() error {
 	//1. Check on the Successor's predecessor pointer whether it is point back to the current node or not.
 	//By calling the successor's predecessor node
 	//*//
-	cr.mutex.Lock()
-	defer cr.mutex.Unlock()
+	//cr.mutex.Lock()
+	//defer cr.mutex.Unlock()
+
 	newReq := FindSucRequest{}
 	newReq.InfoType = GetPre // Get the Successor's predecessor
 	preReplay, err := CallStabilize(cr.Successors[0], "ChordRing.GetNodeInfo", &newReq)
@@ -71,17 +71,41 @@ func (cr *ChordRing) Stabilize() error {
 	}
 	//Notify the successor about its predecessor
 	notifyReq := NotifyArgs{}
-	notifyReq.NewIPAddress = cr.FullAddress
+	notifyReq.NewAddress = cr.FullAddress
 	//CallNotify(cr.Successors[0], "ChordRing.NotifyRPC", &notifyReq)
 	MakeCall[NotifyArgs, NotifyReply](cr.Successors[0], "ChordRing.NotifyRPC", notifyReq)
 
+	//Step 2: Update the Successor List, in case a node has left the ChordRing
+	successorListReq := FindSucRequest{
+		InfoType: GetSuccessors,
+	}
+	succListReply, err := CallStabilize(cr.Successors[0], "ChordRing.GetNodeInfo", &successorListReq)
+	if err == nil {
+		// Update the local node's Successor list about the latest successors in the Ring
+		cr.Successors = append([]string{cr.Successors[0]}, succListReply.Successors...)
+		// Maintain the list size equal to SuccessorNum
+		if len(cr.Successors) > cr.SuccessorNum {
+			cr.Successors = cr.Successors[:cr.SuccessorNum]
+		}
+		//fmt.Printf("Update successors: %v\n", cr.Successors)
+	} else {
+		//In case the first Successor is not alive, then the code address the first successor in the list
+		fmt.Printf("Failed to update successors: %v\n", err)
+		if len(cr.Successors) > 1 {
+			cr.Successors = cr.Successors[1:]
+		} else {
+			// Addressing the case when there is just one node left in Ring,
+			// then we assign the successor lists' items to its own local address
+			cr.Successors = []string{cr.FullAddress}
+		}
+	}
 	return nil
 }
 
 // FixFingers keeps the node's finger_table up-to-date with the latest status of the ChordRing.
 func (cr *ChordRing) FixFingers() error {
-	cr.mutex.Lock()
-	defer cr.mutex.Unlock()
+	//cr.mutex.Lock()
+	//defer cr.mutex.Unlock()
 	i := rand.Intn(m-1) + 1
 	fingerKey := jump(cr.FullAddress, i)
 

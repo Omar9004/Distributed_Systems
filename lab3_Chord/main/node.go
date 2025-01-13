@@ -1,8 +1,11 @@
 package main
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math/big"
 	"net"
@@ -14,7 +17,7 @@ type Key string
 
 type NodeAddress string
 
-// const m = 6
+//const m = 6
 
 //type Node struct {
 //	Identifier  *big.Int
@@ -68,7 +71,8 @@ func NewNode(args *InputArgs) *ChordRing {
 
 	//Initializing node Predecessor and a list of Successors
 	cr.Predecessor = ""
-	cr.Successors = make([]string, args.SuccessorNum)
+	cr.SuccessorNum = args.SuccessorNum
+	cr.Successors = make([]string, cr.SuccessorNum)
 	cr.SuccessorInit()
 
 	//Initialize the node's Bucket
@@ -81,12 +85,15 @@ func NewNode(args *InputArgs) *ChordRing {
 		fmt.Println("Error creating directory")
 	}
 	cr.NodeFolder = FolderName
+
+	//Generate a private key and a public key
+	cr.PublicKey, cr.PrivateKey, _ = GenAsymKeys()
 	return cr
 }
 
 func (cr *ChordRing) SuccessorInit() {
 	for i := 0; i < len(cr.Successors); i++ {
-		cr.Successors[i] = ""
+		cr.Successors[i] = cr.FullAddress
 	}
 }
 
@@ -131,6 +138,10 @@ func (cr *ChordRing) GetNodeInfo(args *FindSucRequest, replay *FindSucReplay) er
 		replay.Predecessor = cr.Predecessor
 	case GetSuccessors:
 		replay.Successors = cr.Successors
+	case GetPubKey:
+		replay.PublicKey = cr.PublicKey
+	case GetPriKey:
+		replay.PrivateKey = cr.PrivateKey
 	default:
 		return errors.New("invalid info type")
 	}
@@ -172,20 +183,127 @@ func (cr *ChordRing) NodeServer() {
 
 func (cr *ChordRing) StoreFile(args *StoreFileArgs, replay *StoreFileReply) error {
 	key := args.Key
+	switch args.StoreType {
+	case MigrateUpload:
+		uploadFolder := "../Upload_files"
+		filePath := fmt.Sprintf("%s/%s", uploadFolder, args.FileName)
+		if _, err := os.Stat(filePath); err == nil {
+			openFile, err := os.Open(filePath)
+			if err != nil {
+				log.Fatal("At MigrateUpload: ", err)
+			}
+			nodeFolder := cr.NodeFolder
+			fileContent, _ := io.ReadAll(openFile)
+			file, err := os.Create(nodeFolder + "/" + args.FileName)
+			if err != nil {
+				log.Fatal("Error Creating a file (At MigrateUpload )", err)
+			}
+			_, err = file.Write(fileContent)
+			if err != nil {
+				log.Fatal("Error Writing a file (At MigrateUpload )", err)
+			}
+			//err := os.Rename(args.FileName, )
+			//if err != nil {
+			//	fmt.Printf("Error moving file to %s", nodeFolder+"/"+args.FileName)
+			//	replay.IsSaved = false
+			//}
+			cr.Bucket[key] = args.FileName
+			replay.IsSaved = true
 
-	//if file exists on the current directory /main, then move it to the node's folder
-	if _, err := os.Stat(args.FileName); err == nil {
-		nodeFolder := cr.NodeFolder
-		err := os.Rename(args.FileName, nodeFolder+"/"+args.FileName)
-		if err != nil {
-			fmt.Printf("Error moving file to %s", nodeFolder+"/"+args.FileName)
+		} else {
+			//cr.Bucket[key] = args.FileName
 			replay.IsSaved = false
 		}
-		cr.Bucket[key] = args.FileName
+	case MigrateNode:
+		nodeFolder := cr.NodeFolder
+		for k, v := range args.MigratedBucket {
 
-	} else {
-		cr.Bucket[key] = args.FileName
+			//err := os.Rename(OldFileP, nodeFolder+"/"+v)
+			//if err != nil {
+			//	fmt.Printf("Error moving file to %s", nodeFolder+"/"+v)
+			//}
+			file, err := os.Create(nodeFolder + "/" + v)
+			if err != nil {
+				log.Fatal("Error Creating File: ", err)
+			}
+			decContent, _ := rsa.DecryptPKCS1v15(rand.Reader, cr.PrivateKey, args.FileContent[k])
+			_, err = file.Write(decContent)
+
+			if err != nil {
+				log.Printf("Error writing to File: ", err)
+				replay.IsSaved = false
+			}
+			//if args.Key.Cmp(k) == 0 {
+			//	continue
+			//} else {
+			cr.Bucket[k] = v
+			go RemoveFile(args.PrevNodeID, v)
+		}
 		replay.IsSaved = true
+
+	}
+	//if file exists on the current directory /main, then move it to the node's folder
+
+	return nil
+}
+
+// PutAll can be used to back up a bucket from a node that is about to leave.
+func (cr *ChordRing) PutAll(args *BackupArgs, replay *BackupReply) error {
+	expectedBucketSize := len(cr.Bucket) + len(args.Bucket)
+	for k, v := range args.Bucket {
+		cr.Bucket[k] = v
+	}
+	currentBucketSize := len(cr.Bucket)
+	if currentBucketSize == expectedBucketSize {
+		replay.IsSaved = true
+	} else {
+		replay.IsSaved = false
+	}
+	return nil
+}
+
+func (cr *ChordRing) MigrateBucket(moveAddress string) error {
+	//
+	getID := MakeCall[FindSucRequest, FindSucReplay](moveAddress, "ChordRing.GetNodeInfo",
+		FindSucRequest{InfoType: GetID})
+	newID := getID.Identifier
+	MigratedBucket := make(map[*big.Int]string)
+	ContentTable := make(map[*big.Int][]byte) //Declaring a map hash table, and its item is a list of byte
+	for k, v := range cr.Bucket {
+		fileKey := k
+		fileName := v
+		OldFilePath := FolderPathGen(cr.Identifier) + "/" + fileName
+		openFile, err := os.Open(OldFilePath)
+		if err != nil {
+			log.Printf("Error opening file (GetAll()) %s", OldFilePath)
+		}
+		defer openFile.Close()
+		content, _ := io.ReadAll(openFile)
+		encRep := MakeCall[FindSucRequest, FindSucReplay](moveAddress, "ChordRing.GetNodeInfo", FindSucRequest{InfoType: GetPubKey})
+
+		//Encrypt the content of the file
+		encContent, _ := rsa.EncryptPKCS1v15(rand.Reader, encRep.PublicKey, content)
+		//getPredId := FindSucRequest{}
+		//getPredId.InfoType = GetID
+		//getIdRep := MakeCall[FindSucRequest, FindSucReplay](args.IPAddress, "ChordRing.GetNodeInfo", getPredId)
+
+		//Check whether the successor node lies between k and the local node
+		isBetween := between(cr.Identifier, fileKey, newID, true)
+		if isBetween {
+
+			MigratedBucket[k] = v
+			ContentTable[k] = encContent
+			delete(cr.Bucket, k)
+
+		}
+	}
+	storeFileReq := StoreFileArgs{StoreType: MigrateNode, MigratedBucket: MigratedBucket,
+		PrevNodeID: cr.Identifier, FileContent: ContentTable, isStored: false}
+
+	storeRep := MakeCall[StoreFileArgs, StoreFileReply](moveAddress, "ChordRing.StoreFile", storeFileReq)
+
+	if !storeRep.IsSaved {
+		log.Printf("Error moving file to %v", newID)
 	}
 	return nil
 }
@@ -201,11 +319,7 @@ func (cr *ChordRing) FindSuccessor(args *FindSucRequest, replay *FindSucReplay) 
 	//newReplay := CallFS(cr.Successors[0], "ChordRing.GetNodeInfo", &requestInfo)
 	newReplay := MakeCall[FindSucRequest, FindSucReplay](cr.Successors[0], "ChordRing.GetNodeInfo", requestInfo)
 
-	//if !cr.call(cr.Successors[0], "ChordRing.GetSucId", FindSucRequest{}, &newReplay) {
-	//	return fmt.Errorf("Faild to reach GetSucID %v\n", newReplay)
-	//}
 	idSuc := IdentifierGen(newReplay.SuccAddress)
-	fmt.Println(args.Identifier)
 	isBetween := between(cr.Identifier, joinNodeID, idSuc, true)
 	if isBetween {
 		//fmt.Printf("Found successor in between: %s\n", args.IPAddress)
@@ -223,4 +337,51 @@ func (cr *ChordRing) FindSuccessor(args *FindSucRequest, replay *FindSucReplay) 
 	//fmt.Printf("Found the successor: %s\n", replay.SuccAddress)
 	//fmt.Printf("Found suc between %s\n", isBetween)
 	return nil
+
+}
+
+// QuitChord handles the node's quit scenario, by backing up the bucket to the successor node
+func (cr *ChordRing) QuitChord() {
+	var SuccAddress string
+	if cr.Successors != nil && cr.Successors[0] != "" {
+		SuccAddress = cr.Successors[0]
+	} else {
+		findSucArgs := FindSucRequest{Identifier: cr.Identifier}
+		newReplay := MakeCall[FindSucRequest, FindSucReplay](cr.IPAddress, "ChordRing.FindSuccessor", findSucArgs)
+		SuccAddress = newReplay.SuccAddress
+	}
+	cr.MigrateBucket(SuccAddress)
+	////backupRequest := BackupArgs{IPAddress: SuccAddress, Bucket: cr.Bucket}
+	//backupRequest := StoreFileArgs{StoreType: MigrateNode, MigratedBucket: cr.Bucket, PrevNodeID: cr.Identifier, isStored: false, FileContent: }
+	//
+	//
+	//backupReply := MakeCall[StoreFileArgs, StoreFileReply](SuccAddress, "ChordRing.StoreFile", backupRequest)
+
+	//if backupReply.IsSaved {
+	//	fmt.Println("The Bucket has been successfully backed up to the successor!")
+	//} else {
+	//	log.Println("The Bucket has failed to backed up to the successor!")
+	//}
+
+}
+
+func (cr *ChordRing) PrintState() {
+	fmt.Println("-------------- Node Details ------------")
+	fmt.Println("Node Address: ", cr.FullAddress)
+	fmt.Println("Node Identifier: ", new(big.Int).SetBytes(cr.Identifier.Bytes()))
+	fmt.Println("Node Predecessor: ", cr.Predecessor)
+	fmt.Println("Node Successors: ")
+	for i, s := range cr.Successors {
+		fmt.Println("Successor ", i, " address: ", s)
+	}
+	fmt.Println("Node Finger Table: ")
+	for i := 1; i < len(cr.FingerTable); i++ {
+		item := cr.FingerTable[i]
+		id := item.Identifier
+		address := item.IPAddress
+		fmt.Println("Finger ", i, " id: ", id, ", address: ", address)
+
+	}
+	fmt.Println("Node bucket: ", cr.Bucket)
+
 }

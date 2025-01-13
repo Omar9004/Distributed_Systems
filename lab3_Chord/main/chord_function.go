@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rsa"
 	"log"
 	"math/big"
 	//"net/rpc"
@@ -30,6 +31,8 @@ type ChordRing struct {
 	FullAddress string //IP address and Channel Port
 	NodeFolder  string //Referring to the node's folder directory
 	Bucket      map[*big.Int]string
+	PublicKey   *rsa.PublicKey
+	PrivateKey  *rsa.PrivateKey
 }
 
 func (cr *ChordRing) NewChordRing() {
@@ -67,8 +70,8 @@ func (cr *ChordRing) lookupFingers(key *big.Int, NodeAddress string) (*big.Int, 
 	return key, newReplay.SuccAddress
 }
 
-func (cr *ChordRing) storeFile(key *big.Int, SucIP string, fileName string) error {
-	newReq := StoreFileArgs{FileName: fileName, Key: key}
+func (cr *ChordRing) StoreRPC(key *big.Int, SucIP string, fileName string) error {
+	newReq := StoreFileArgs{FileName: fileName, Key: key, StoreType: MigrateUpload}
 	newRep := MakeCall[StoreFileArgs, StoreFileReply](SucIP, "ChordRing.StoreFile", newReq)
 	if newRep.IsSaved {
 		log.Printf("The file has been stored at the successor Node: N%s\n", IdentifierGen(SucIP))
@@ -83,6 +86,10 @@ func (cr *ChordRing) storeFile(key *big.Int, SucIP string, fileName string) erro
 //	cr.Nodes = append(cr.Nodes, node)
 //}
 
+// Notify updates the predecessor status of the ChordRing after the joining of the new node.
+// If there is already a predecessor for the called node,
+// then the function checks on whether the newly joined lies between the called node's predecessor and the called node(local node).
+// Otherwise, if there is no predecessor, then newly joined will be assigned directly as the called node's new predecessor.
 func (cr *ChordRing) Notify(NewIPAddress string) bool {
 	if cr.Predecessor != "" {
 		requestInfo := FindSucRequest{}
@@ -96,9 +103,6 @@ func (cr *ChordRing) Notify(NewIPAddress string) bool {
 		isBetween := between(predID, newNodeID, cr.Identifier, false)
 		if isBetween {
 			cr.Predecessor = NewIPAddress
-			//fmt.Printf("Predecessor node IP:%v\n", cr.Predecessor)
-			//fmt.Printf("newNodeIP:%v\n", NewIPAddress)
-			//fmt.Printf("Current Node IP:%v\n", cr.FullAddress)
 			return true
 		} else {
 			return false
@@ -114,8 +118,10 @@ func (cr *ChordRing) Notify(NewIPAddress string) bool {
 }
 
 func (cr *ChordRing) NotifyRPC(args *NotifyArgs, replay *NotifyReply) error {
-	if cr.Notify(args.NewIPAddress) {
-		replay.isComplete = true
+	if cr.Notify(args.NewAddress) {
+		//storeReq := BackupArgs{Bucket: cr.Bucket}
+		//MakeCall[BackupArgs, BackupReply](cr.FullAddress, "ChordRing.MigrateBucket", storeReq)
+		cr.MigrateBucket(args.NewAddress)
 	} else {
 		replay.isComplete = false
 
@@ -124,19 +130,15 @@ func (cr *ChordRing) NotifyRPC(args *NotifyArgs, replay *NotifyReply) error {
 }
 
 func (cr *ChordRing) JoinChord(joinNodeAdd string, args *FindSucRequest, replay *FindSucReplay) error {
-	//extractIP := strings.Split(joinNodeAdd, ":")[0]
-	//joinId := IdentifierGen(extractIP)
 	getReq := FindSucRequest{
 		Identifier: cr.Identifier,
 		IPAddress:  cr.FullAddress,
 	}
-	//fmt.Println("joinNodeAdd", joinNodeAdd)
-	//findSucReply := CallFS(joinNodeAdd, "ChordRing.FindSuccessor", &getReq)
 	findSucReply := MakeCall[FindSucRequest, FindSucReplay](joinNodeAdd, "ChordRing.FindSuccessor", getReq)
 
 	notifyReq := NotifyArgs{}
 	cr.Successors[0] = findSucReply.SuccAddress
-	notifyReq.NewIPAddress = cr.Successors[0]
+	notifyReq.NewAddress = cr.FullAddress
 
 	//CallNotify(cr.Successors[0], "ChordRing.NotifyRPC", &notifyReq)
 	MakeCall[NotifyArgs, NotifyReply](cr.Successors[0], "ChordRing.NotifyRPC", notifyReq)

@@ -16,8 +16,8 @@ const (
 type InputArgs struct {
 	IpAddr           string
 	Port             int
-	NewIp            string
-	NewPort          int
+	JoinIP           string
+	JoinPort         int
 	Stabilize        int
 	FixFingers       int
 	CheckPredecessor int
@@ -41,15 +41,15 @@ func ArgsInit() *InputArgs {
 	args := InputArgs{
 		IpAddr:           *IpAddr,
 		Port:             *Port,
-		NewIp:            *JoinIp,
-		NewPort:          *JoinPort,
+		JoinIP:           *JoinIp,
+		JoinPort:         *JoinPort,
 		Stabilize:        *Stabilize,
 		FixFingers:       *FixFingers,
 		CheckPredecessor: *CheckPredecessor,
 		SuccessorNum:     *SuccessorNum,
 		Identifier:       *Identifier,
 	}
-	if (args.NewIp == "xxx") && (args.NewPort == 0000) {
+	if (args.JoinIP == "xxx") && (args.JoinPort == 0000) {
 		args.InputArgsState = NewChord
 	} else {
 		args.InputArgsState = JoinChord
@@ -90,7 +90,7 @@ func (args *InputArgs) ArgsValidation() bool {
 		return PortCheck && StabilizeCheck && FixFingersCheck && CheckPredecessorC && SuccessorNumCheck
 
 	} else if args.InputArgsState == JoinChord {
-		PortCheck := args.Port >= 0 && args.Port <= 65535 && args.NewPort >= 0 && args.NewPort <= 65535
+		PortCheck := args.Port >= 0 && args.Port <= 65535 && args.JoinPort >= 0 && args.JoinPort <= 65535
 		StabilizeCheck := args.Stabilize >= 1 && args.Stabilize <= 60000
 		FixFingersCheck := args.FixFingers >= 1 && args.FixFingers <= 60000
 		CheckPredecessorC := args.CheckPredecessor >= 1 && args.CheckPredecessor <= 60000

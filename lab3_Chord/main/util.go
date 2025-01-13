@@ -2,12 +2,15 @@ package main
 
 import (
 	"bufio"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha1"
 	"io/ioutil"
 	"log"
 	"math/big"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 )
 
@@ -84,4 +87,25 @@ func GetPublicIP() string {
 		log.Fatal(err)
 	}
 	return string(body)
+}
+
+// RemoveFile removes a file from a node's folder, by giving the nodeId and the fileName.
+func RemoveFile(nodeId *big.Int, file string) {
+	OldFileP := FolderPathGen(nodeId) + "/" + file
+	err := os.Remove(OldFileP)
+	if err != nil {
+		log.Fatal("Error Removing the file:", err)
+		return
+	}
+}
+
+// GenAsymKeys generates asymmetric keys based on the RSA Asymmetric Cryptography.
+func GenAsymKeys() (*rsa.PublicKey, *rsa.PrivateKey, error) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		log.Printf("Error generating RSA private key: %s", err)
+		return nil, nil, err
+	}
+	publicKey := &privateKey.PublicKey
+	return publicKey, privateKey, nil
 }

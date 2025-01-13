@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"reflect"
+	"time"
 )
 
 func main() {
@@ -28,7 +29,7 @@ func main() {
 		case NewChord:
 			chord.NewChordRing()
 		case JoinChord:
-			joinNodeAdd := fmt.Sprintf("%s:%d", arguments.NewIp, arguments.NewPort)
+			joinNodeAdd := fmt.Sprintf("%s:%d", arguments.JoinIP, arguments.JoinPort)
 			chord.JoinChord(joinNodeAdd, &FindSucRequest{}, &FindSucReplay{})
 		}
 		timers := chord.initDurations(arguments)
@@ -42,21 +43,28 @@ func main() {
 				//file, _ := input.ReadString('\n')
 				//file = strings.TrimSpace(file)
 				file := readStringIn(input)
-				SucAddress, _ := chord.lookup(file, chord.FullAddress)
+				fmt.Printf("Enter the name of file that you are looking for:")
+				_, SucAddress := chord.lookup(file, chord.FullAddress)
 				fmt.Printf("The file exists at the node with an IP address: %s\n", SucAddress)
 			case "StoreFile":
 				fmt.Println("Enter the name of the file that you want to store!")
 				file := readStringIn(input)
 				key, SucAddress := chord.lookup(file, chord.FullAddress)
 				fmt.Printf("The file exists at the node with an IP address: %s\n", SucAddress)
-				chord.storeFile(key, SucAddress, file)
+				chord.StoreRPC(key, SucAddress, file)
 				fmt.Printf("The file exists at the node with an IP address: %s\n", SucAddress)
 				fmt.Printf("The file has a key of : %s\n", key)
+			case "PrintState":
+				chord.PrintState()
 			case "q":
 				if timers != nil {
+
 					timers[0].quit <- true //Inform the Stabilizer about the node exiting to terminate the Goroutine
 					timers[1].quit <- true //Inform the FixFingers about the node exiting to terminate the Goroutine
 					timers[2].quit <- true //Inform the Check_Predecessor about the node exiting to terminate the Goroutine
+					chord.QuitChord()
+					fmt.Println("Quitting...")
+					time.Sleep(2 * time.Second)
 				}
 				os.Exit(0)
 			default:
