@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"math/rand"
+	mathRand "math/rand"
 	"net/rpc"
 	"time"
 )
@@ -76,6 +76,63 @@ func (cr *ChordRing) Stabilize() error {
 	MakeCall[NotifyArgs, NotifyReply](cr.Successors[0], "ChordRing.NotifyRPC", notifyReq)
 
 	//Step 2: Update the Successor List, in case a node has left the ChordRing
+
+	//if cr.Successors[0] == cr.FullAddress {
+	//	return nil
+	//}
+	//MigratedBucket := make(map[*big.Int]string)
+	//ContentTable := make(map[*big.Int][]byte)
+	//
+	//for k, v := range cr.Bucket {
+	//	OldFilePath := FolderPathGen(cr.Identifier) + "/" + v
+	//	openFile, err := os.Open(OldFilePath)
+	//	if err != nil {
+	//		log.Printf("Error opening file: %s, %v", OldFilePath, err)
+	//		continue
+	//	}
+	//	defer openFile.Close()
+	//
+	//	content, err := io.ReadAll(openFile)
+	//	if err != nil {
+	//		log.Printf("Error reading file content: %s, %v", OldFilePath, err)
+	//		continue
+	//	}
+	//
+	//	encRep := MakeCall[FindSucRequest, FindSucReplay](cr.Successors[0], "ChordRing.GetNodeInfo",
+	//		FindSucRequest{InfoType: GetPubKey})
+	//	if err != nil {
+	//		log.Printf("Failed to fetch public key for encryption: %v", err)
+	//		continue
+	//	}
+	//
+	//	encContent, err := rsa.EncryptPKCS1v15(cryptoRand.Reader, encRep.PublicKey, content)
+	//	if err != nil {
+	//		log.Printf("Error encrypting file content: %v", err)
+	//		continue
+	//	}
+	//
+	//	MigratedBucket[k] = v
+	//	ContentTable[k] = encContent
+	//	//go func() {
+	//	//	if err := RemoveFile(cr.Identifier, v); err != nil {
+	//	//		log.Printf("Failed to remove file %s from node %s: %v", v, cr.Identifier, err)
+	//	//	}
+	//	//}()
+	//}
+	//
+	//if len(MigratedBucket) > 0 && len(ContentTable) > 0 {
+	//	storeFileReq := StoreFileArgs{
+	//		StoreType:      KeyBackup,
+	//		MigratedBucket: MigratedBucket,
+	//		PrevNodeID:     cr.Identifier,
+	//		FileContent:    ContentTable,
+	//	}
+	//	storeRep := MakeCall[StoreFileArgs, StoreFileReply](cr.Successors[0], "ChordRing.StoreFile", storeFileReq)
+	//	if !storeRep.IsSaved {
+	//		log.Printf("Failed to back up files to successor %s: %v", cr.Successors[0], err)
+	//	}
+	//	//cr.cleanRedundantFile()
+	//}
 	successorListReq := FindSucRequest{
 		InfoType: GetSuccessors,
 	}
@@ -99,6 +156,7 @@ func (cr *ChordRing) Stabilize() error {
 			cr.Successors = []string{cr.FullAddress}
 		}
 	}
+
 	return nil
 }
 
@@ -106,7 +164,7 @@ func (cr *ChordRing) Stabilize() error {
 func (cr *ChordRing) FixFingers() error {
 	//cr.mutex.Lock()
 	//defer cr.mutex.Unlock()
-	i := rand.Intn(m-1) + 1
+	i := mathRand.Intn(m-1) + 1
 	fingerKey := jump(cr.FullAddress, i)
 
 	_, nextNode := cr.lookupFingers(fingerKey, cr.FullAddress)
@@ -116,6 +174,7 @@ func (cr *ChordRing) FixFingers() error {
 
 	return nil
 }
+
 func (cr *ChordRing) Check_predecessor() error {
 	if cr.Predecessor != "" {
 		_, err := rpc.Dial("tcp", cr.Predecessor)

@@ -77,6 +77,7 @@ func NewNode(args *InputArgs) *ChordRing {
 
 	//Initialize the node's Bucket
 	cr.Bucket = make(map[*big.Int]string)
+	cr.KeyBackup = make(map[*big.Int]string)
 
 	FolderName := FolderPathGen(cr.Identifier)
 	// Create a directory for a node for saving the assigned files on it.
@@ -87,7 +88,8 @@ func NewNode(args *InputArgs) *ChordRing {
 	cr.NodeFolder = FolderName
 
 	//Generate a private key and a public key
-	cr.PublicKey, cr.PrivateKey, _ = GenAsymKeys()
+	//cr.PublicKey, cr.PrivateKey, _ = GenAsymKeys("private.pem", "public.pem")
+	cr.genRSAKey(2048)
 	return cr
 }
 
@@ -181,7 +183,58 @@ func (cr *ChordRing) NodeServer() {
 	}(listener)
 }
 
+//func (cr *ChordRing) NodeServer() {
+//	// Register the ChordRing object for RPC
+//	err := rpc.Register(cr)
+//	if err != nil {
+//		fmt.Printf("Error with RPC Register: %v\n", err.Error())
+//		return
+//	}
+//
+//	// Load TLS certificates
+//	cert, err := tls.LoadX509KeyPair("complete-cert.pem", "server-key.pem")
+//	if err != nil {
+//		log.Fatalf("Failed to load TLS certificate and key: %v", err)
+//	}
+//
+//	// Create TLS configuration
+//	tlsConfig := &tls.Config{
+//		Certificates: []tls.Certificate{cert},
+//		//MinVersion:   tls.VersionTLS12, // Enforce TLS 1.2 or higher
+//		ClientAuth: tls.NoClientCert,
+//	}
+//
+//	// Resolve TCP address
+//	addr, err := net.ResolveTCPAddr("tcp", cr.FullAddress)
+//	if err != nil {
+//		log.Fatalf("Inaccessible IP: %v", err.Error())
+//	}
+//
+//	// Create a TLS listener
+//	listener, err := tls.Listen("tcp", addr.String(), tlsConfig)
+//	if err != nil {
+//		log.Fatalf("Failed to start TLS listener: %v", err)
+//	}
+//	defer listener.Close()
+//
+//	fmt.Printf("TLS NodeServer is running at %s\n", cr.FullAddress)
+//
+//	// Accept and serve connections
+//	go func(listener net.Listener) {
+//		for {
+//			conn, err := listener.Accept()
+//			if err != nil {
+//				log.Printf("Error accepting connection: %s\n", err)
+//				continue
+//			}
+//			go rpc.ServeConn(conn)
+//		}
+//	}(listener)
+//}
+
 func (cr *ChordRing) StoreFile(args *StoreFileArgs, replay *StoreFileReply) error {
+	//cr.mutex.Lock()
+	//defer cr.mutex.Unlock()
 	key := args.Key
 	switch args.StoreType {
 	case MigrateUpload:
@@ -225,22 +278,53 @@ func (cr *ChordRing) StoreFile(args *StoreFileArgs, replay *StoreFileReply) erro
 			file, err := os.Create(nodeFolder + "/" + v)
 			if err != nil {
 				log.Fatal("Error Creating File: ", err)
+				replay.IsSaved = false
 			}
-			decContent, _ := rsa.DecryptPKCS1v15(rand.Reader, cr.PrivateKey, args.FileContent[k])
+			decContent, err := rsa.DecryptPKCS1v15(rand.Reader, cr.PrivateKey, args.FileContent[k])
+			if err != nil {
+				log.Fatal("Error Decrypting File: ", err)
+			}
 			_, err = file.Write(decContent)
 
 			if err != nil {
 				log.Printf("Error writing to File: ", err)
-				replay.IsSaved = false
 			}
 			//if args.Key.Cmp(k) == 0 {
 			//	continue
 			//} else {
 			cr.Bucket[k] = v
-			go RemoveFile(args.PrevNodeID, v)
+			go func() {
+				if err := RemoveFile(args.PrevNodeID, v); err != nil {
+					log.Printf("Failed to remove file %s from node %s: %v", v, args.PrevNodeID, err)
+				}
+			}()
 		}
 		replay.IsSaved = true
 
+	case KeyBackup:
+		nodeFolder := cr.NodeFolder
+		for k, v := range args.MigratedBucket {
+			//if cr.IsExist(k) {
+			//	continue
+			//}
+			file, err := os.Create(nodeFolder + "/" + v)
+			if err != nil {
+				log.Fatal("Error Creating Backup File (KeyBackup): ", err)
+			}
+			decContent, _ := rsa.DecryptPKCS1v15(rand.Reader, cr.PrivateKey, args.FileContent[k])
+			//if err != nil {
+			//	log.Printf("Error Decrypting Backup %s File's (KeyBackup): %v\n ", v, err)
+			//	continue
+			//}
+			_, err = file.Write(decContent)
+			if err != nil {
+				log.Printf("Error writing to File (KeyBackup): ", err)
+			}
+			cr.KeyBackup[k] = v
+
+			//go RemoveFile(args.PrevNodeID, v)
+
+		}
 	}
 	//if file exists on the current directory /main, then move it to the node's folder
 
@@ -275,7 +359,7 @@ func (cr *ChordRing) MigrateBucket(moveAddress string) error {
 		OldFilePath := FolderPathGen(cr.Identifier) + "/" + fileName
 		openFile, err := os.Open(OldFilePath)
 		if err != nil {
-			log.Printf("Error opening file (GetAll()) %s", OldFilePath)
+			log.Printf("Error opening file (MigrateBucket()) %s", OldFilePath)
 		}
 		defer openFile.Close()
 		content, _ := io.ReadAll(openFile)
@@ -341,47 +425,121 @@ func (cr *ChordRing) FindSuccessor(args *FindSucRequest, replay *FindSucReplay) 
 }
 
 // QuitChord handles the node's quit scenario, by backing up the bucket to the successor node
-func (cr *ChordRing) QuitChord() {
-	var SuccAddress string
-	if cr.Successors != nil && cr.Successors[0] != "" {
-		SuccAddress = cr.Successors[0]
-	} else {
-		findSucArgs := FindSucRequest{Identifier: cr.Identifier}
-		newReplay := MakeCall[FindSucRequest, FindSucReplay](cr.IPAddress, "ChordRing.FindSuccessor", findSucArgs)
-		SuccAddress = newReplay.SuccAddress
-	}
-	cr.MigrateBucket(SuccAddress)
-	////backupRequest := BackupArgs{IPAddress: SuccAddress, Bucket: cr.Bucket}
-	//backupRequest := StoreFileArgs{StoreType: MigrateNode, MigratedBucket: cr.Bucket, PrevNodeID: cr.Identifier, isStored: false, FileContent: }
-	//
-	//
-	//backupReply := MakeCall[StoreFileArgs, StoreFileReply](SuccAddress, "ChordRing.StoreFile", backupRequest)
+//func (cr *ChordRing) QuitChord() {
+//	var SuccAddress string
+//	if cr.Successors != nil && cr.Successors[0] != "" {
+//		SuccAddress = cr.Successors[0]
+//	} else {
+//		findSucArgs := FindSucRequest{Identifier: cr.Identifier}
+//		newReplay := MakeCall[FindSucRequest, FindSucReplay](cr.IPAddress, "ChordRing.FindSuccessor", findSucArgs)
+//		SuccAddress = newReplay.SuccAddress
+//	}
+//	cr.MigrateBucket(SuccAddress)
+//
+//}
 
-	//if backupReply.IsSaved {
-	//	fmt.Println("The Bucket has been successfully backed up to the successor!")
-	//} else {
-	//	log.Println("The Bucket has failed to backed up to the successor!")
+func (cr *ChordRing) Leave() error {
+	// Notify successor about key migration
+	MigratedBucket := make(map[*big.Int]string)
+	FileContent := make(map[*big.Int][]byte)
+	for key, value := range cr.Bucket {
+		filePath := FolderPathGen(cr.Identifier) + "/" + value
+
+		// Read file content
+		file, err := os.Open(filePath)
+		if err != nil {
+			log.Printf("Failed to open file %s: %v", filePath, err)
+			continue
+		}
+		defer file.Close()
+
+		content, err := io.ReadAll(file)
+
+		getPubKey := MakeCall[FindSucRequest, FindSucReplay](cr.Successors[0], "ChordRing.GetNodeInfo", FindSucRequest{InfoType: GetPubKey})
+		getPriKey := MakeCall[FindSucRequest, FindSucReplay](cr.Successors[0], "ChordRing.GetNodeInfo", FindSucRequest{InfoType: GetPriKey})
+		fmt.Printf("Private Key %v\n", getPriKey.PrivateKey)
+		fmt.Printf("Public Key %v\n", getPubKey.PublicKey)
+		encContent, _ := rsa.EncryptPKCS1v15(rand.Reader, getPubKey.PublicKey, content)
+		if err != nil {
+			log.Printf("Failed to read file content for key %v: %v", key, err)
+			continue
+		}
+
+		MigratedBucket[key] = value
+		FileContent[key] = encContent
+	}
+	// Prepare request to store file on the successor
+	req := StoreFileArgs{
+		StoreType:      MigrateNode,
+		MigratedBucket: MigratedBucket,
+		FileContent:    FileContent,
+		PrevNodeID:     cr.Identifier,
+	}
+
+	// Send file to the successor
+
+	sucReplay := MakeCall[StoreFileArgs, StoreFileReply](cr.Successors[0], "ChordRing.StoreFile", req)
+	if !sucReplay.IsSaved {
+		log.Printf("Failed to migrate keys to successor %s!", cr.Successors[0])
+	} else {
+		// Remove key from local bucket
+		for key, filePath := range MigratedBucket {
+			delete(cr.Bucket, key)
+			os.Remove(filePath)
+		}
+
+	}
+
+	//// Notify the predecessor and successor to update their pointers
+	//MakeCall[NotifyArgs, NotifyReply](cr.Successors[0], "ChordRing.NotifyRPC", NotifyArgs{
+	//	NewAddress: cr.Predecessor,
+	//})
+	////if notifySuccessorErr != nil {
+	////	log.Printf("Failed to notify successor: %v", notifySuccessorErr)
+	////}
+	//
+	//MakeCall[NotifyArgs, NotifyReply](cr.Predecessor, "ChordRing.NotifyRPC", NotifyArgs{
+	//	NewAddress: cr.Successors[0],
+	//})
+	//if notifyPredecessorErr != nil {
+	//	log.Printf("Failed to notify predecessor: %v", notifyPredecessorErr)
 	//}
 
+	// Clear local state
+	cr.Bucket = nil
+	cr.Successors = nil
+	return nil
+}
+
+// IsExist checks whether a given key is existed on the node's bucket or the backupkeys bucket
+func (cr *ChordRing) IsExist(key *big.Int) bool {
+	if _, ok := cr.Bucket[key]; ok {
+		return true
+	}
+	if _, ok := cr.KeyBackup[key]; ok {
+		return true
+	}
+	return false
 }
 
 func (cr *ChordRing) PrintState() {
-	fmt.Println("-------------- Node Details ------------")
-	fmt.Println("Node Address: ", cr.FullAddress)
-	fmt.Println("Node Identifier: ", new(big.Int).SetBytes(cr.Identifier.Bytes()))
-	fmt.Println("Node Predecessor: ", cr.Predecessor)
-	fmt.Println("Node Successors: ")
+	fmt.Println("++++++++++ Node Details ++++++++++")
+	fmt.Printf("Node Address: %s\nNode Identifier: %v\nNode Predecessor: %s\n",
+		cr.FullAddress,
+		new(big.Int).SetBytes(cr.Identifier.Bytes()),
+		cr.Predecessor)
+	fmt.Println()
+	fmt.Println("Node's Successors: ")
 	for i, s := range cr.Successors {
-		fmt.Println("Successor ", i, " address: ", s)
+		fmt.Printf("Successor %d: %s\n", i, s)
 	}
-	fmt.Println("Node Finger Table: ")
+	fmt.Println()
+	fmt.Println("Finger Table: ")
 	for i := 1; i < len(cr.FingerTable); i++ {
-		item := cr.FingerTable[i]
-		id := item.Identifier
-		address := item.IPAddress
-		fmt.Println("Finger ", i, " id: ", id, ", address: ", address)
+		fmt.Printf("Finger %d: %s, Address: %s\n", i, cr.FingerTable[i], cr.FingerTable[i].IPAddress)
 
 	}
+	fmt.Println()
 	fmt.Println("Node bucket: ", cr.Bucket)
 
 }

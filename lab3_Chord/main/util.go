@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha1"
+	"crypto/x509"
+	"encoding/pem"
 	"io/ioutil"
 	"log"
 	"math/big"
@@ -90,13 +92,14 @@ func GetPublicIP() string {
 }
 
 // RemoveFile removes a file from a node's folder, by giving the nodeId and the fileName.
-func RemoveFile(nodeId *big.Int, file string) {
+func RemoveFile(nodeId *big.Int, file string) error {
 	OldFileP := FolderPathGen(nodeId) + "/" + file
 	err := os.Remove(OldFileP)
 	if err != nil {
 		log.Fatal("Error Removing the file:", err)
-		return
+		return err
 	}
+	return nil
 }
 
 // GenAsymKeys generates asymmetric keys based on the RSA Asymmetric Cryptography.
@@ -108,4 +111,49 @@ func GenAsymKeys() (*rsa.PublicKey, *rsa.PrivateKey, error) {
 	}
 	publicKey := &privateKey.PublicKey
 	return publicKey, privateKey, nil
+}
+
+func (cr *ChordRing) genRSAKey(bits int) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, bits)
+	if err != nil {
+		log.Println("[genRSAKey] Failed to generate private key for node ", "N"+cr.Identifier.String())
+	}
+	cr.PrivateKey = privateKey
+	cr.PublicKey = &privateKey.PublicKey
+
+	//store private key in the node folder
+	privateKeyDER := x509.MarshalPKCS1PrivateKey(privateKey)
+	block := pem.Block{Type: "N" + cr.Identifier.String() + "-private Key",
+		Headers: nil,
+		Bytes:   privateKeyDER}
+	//nodeFolder := "../files/" + "N" + cr.Identifier.String()
+	privateKeyFile, err := os.Create("private.pem")
+	if err != nil {
+		log.Println("[genRSAKey] Failed to create private key file for node ", "N"+cr.Identifier.String())
+	}
+	defer privateKeyFile.Close()
+	err = pem.Encode(privateKeyFile, &block)
+	if err != nil {
+		log.Println("[genRSAKey] Failed to write private key into file")
+	}
+
+	//store public kay in the node folder
+	publicKeyDER, err := x509.MarshalPKIXPublicKey(cr.PublicKey)
+	if err != nil {
+		log.Println("[genRSAKey] Failed to get DER format of public key for node ", cr.Identifier)
+	}
+	block = pem.Block{
+		Type:    "N" + cr.Identifier.String() + "-public Key",
+		Headers: nil,
+		Bytes:   publicKeyDER,
+	}
+	publicKeyFile, err := os.Create("public.pem")
+	if err != nil {
+		log.Println("[genRSAKey] Failed to create public key file for node ", cr.Identifier)
+	}
+	defer publicKeyFile.Close()
+	err = pem.Encode(publicKeyFile, &block)
+	if err != nil {
+		log.Println("[genRSAKey] Failed to write public key into file")
+	}
 }

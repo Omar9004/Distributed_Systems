@@ -62,7 +62,7 @@ func main() {
 					timers[0].quit <- true //Inform the Stabilizer about the node exiting to terminate the Goroutine
 					timers[1].quit <- true //Inform the FixFingers about the node exiting to terminate the Goroutine
 					timers[2].quit <- true //Inform the Check_Predecessor about the node exiting to terminate the Goroutine
-					chord.QuitChord()
+					chord.Leave()
 					fmt.Println("Quitting...")
 					time.Sleep(2 * time.Second)
 				}

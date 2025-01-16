@@ -63,6 +63,7 @@ const (
 const (
 	MigrateNode = iota
 	MigrateUpload
+	KeyBackup
 )
 
 // Replay or respond type from the coordinator
@@ -161,22 +162,9 @@ func MakeCall[ArgsType any, ReplayType any](NodeAddress string, callFunc string,
 	return replay
 }
 
-// // CallNotify is dedicated to serve the Notify procedure
-//
-//	func CallNotify(NodeAddress string, callFunc string, args *NotifyArgs) NotifyReply {
-//		replay := NotifyReply{}
-//
-//		makeCall := call(NodeAddress, callFunc, &args, &replay)
-//
-//		if !makeCall {
-//			fmt.Printf("Failed to call: %d, at node's IP address of: %s!\n", callFunc, NodeAddress)
-//		}
-//		return replay
-//	}
-
-func (cr *ChordRing) CallStore(NodeAddress string, callFunc string, args *StoreFileArgs) StoreFileReply {
+func CallStore(NodeAddress string, callFunc string, args *StoreFileArgs) StoreFileReply {
 	replay := StoreFileReply{}
-	ListObjectMethods(cr)
+	//ListObjectMethods(cr)
 	makeCall := call(NodeAddress, callFunc, &args, &replay)
 
 	if !makeCall {
@@ -194,6 +182,43 @@ func CallStabilize(NodeAddress string, callFunc string, args *FindSucRequest) (F
 	}
 	return replay, nil
 }
+
+//func call(address string, rpcname string, args interface{}, reply interface{}) bool {
+//	//fmt.Println("call", address)
+//	certPool := x509.NewCertPool()
+//	serverCert, err := os.ReadFile("complete-cert.pem") // Path to your server's certificate
+//	if err != nil {
+//		fmt.Printf("Failed to load server certificate: %v\n", err)
+//		return false
+//	}
+//	certPool.AppendCertsFromPEM(serverCert)
+//	config := &tls.Config{
+//		InsecureSkipVerify: true,
+//		RootCAs:            certPool,
+//	}
+//
+//	c, err := tls.Dial("tcp", address, config)
+//	if err != nil {
+//		fmt.Printf("Failed to connect to node: %s\n", address)
+//	}
+//	//c, err := rpc.Dial("tcp", address)
+//	//if err != nil {
+//	//	log.Printf("dialing:", err)
+//	//	return false
+//	//}
+//	defer c.Close()
+//
+//	rpcClient := rpc.NewClient(c)
+//	err = rpcClient.Call(rpcname, args, reply)
+//
+//	if err != nil {
+//		log.Println("Call service error: ", err)
+//		return false
+//	}
+//
+//	return true
+//}
+
 func call(address string, rpcname string, args interface{}, reply interface{}) bool {
 	//fmt.Println("call", address)
 	c, err := rpc.Dial("tcp", address)

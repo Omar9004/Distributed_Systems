@@ -31,8 +31,10 @@ type ChordRing struct {
 	FullAddress string //IP address and Channel Port
 	NodeFolder  string //Referring to the node's folder directory
 	Bucket      map[*big.Int]string
-	PublicKey   *rsa.PublicKey
-	PrivateKey  *rsa.PrivateKey
+	KeyBackup   map[*big.Int]string
+	//certificate x509.CertPool
+	PublicKey  *rsa.PublicKey
+	PrivateKey *rsa.PrivateKey
 }
 
 func (cr *ChordRing) NewChordRing() {
